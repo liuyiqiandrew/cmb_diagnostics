@@ -22,7 +22,7 @@ class TF_Calib:
         self.planck_f2 = {}
         
         # initialize so
-        self.so_fname = "/scratch/gpfs/sa5705/shared/SO_SAT/satp3_maps/8May2024/map_f{freq:03d}_muKcmb.fits"
+        self.so_fname = "/scratch/gpfs/sa5705/shared/SO_SAT/satp3_maps/cmb_maps_satp3_20240714/map_f{freq:03d}_muKcmb.fits"
         self.so_freqs = np.array([90, 150])
         self.so_beams = np.array([27.4, 17.6])
         self.so_f2 = {}
@@ -54,7 +54,6 @@ class TF_Calib:
 
         self.result_dir = "/home/yl9946/projects/cmb_diagnostics/result/"
 
-
     def init_mask(self, mask):
         print("init mask")
         self.mask = mask
@@ -78,7 +77,7 @@ class TF_Calib:
         print("read CAMB dl")
         dl_tmp = np.loadtxt(self.camb_dl_path)
         dl_tmp = np.concatenate((np.zeros((1, 5)), dl_tmp))
-        dl_bin = self.bins.bin_cell(dl_tmp[:self.nside * 3, 2])
+        dl_bin = self.bins.bin_cell(dl_tmp[:self.nside * 3, 2]) * self.e_dl2cl
         self.camb_dl = dl_bin
 
     def init_planck_f2(self):
@@ -95,16 +94,28 @@ class TF_Calib:
         for fq1, fq2 in itertools.combinations_with_replacement(self.planck_freqs, 2):
             print(f"p{fq1}xp{fq2}")
             nmt_spec = nmt.compute_full_master(self.planck_f2[fq1], self.planck_f2[fq2], self.bins)
-            self.ee_specs[f"p{fq1}xp{fq2}"] = nmt_spec[0] * 1e12
+            self.ee_specs[f"p{fq1}xp{fq2}"] = nmt_spec[0]
 
     def calc_planck_xspec_var(self):
         print("calculating planck cross spectra variance")
+        plt.figure(dpi=300)
         for fq1, fq2 in itertools.combinations(self.planck_freqs, 2):
             print(f"p{fq1}xp{fq2}")
             cl13 = self.ee_specs[f"p{fq1}xp{fq1}"]
             cl24 = self.ee_specs[f"p{fq2}xp{fq2}"]
             cl14 = cl23 = self.ee_specs[f"p{fq1}xp{fq2}"]
-            self.ee_xspec_var[f"p{fq1}xp{fq2}"] = knox_covar(cl13, cl24, cl14, cl23, self.fsky, self.e_l, self.bin_width)
+            self.ee_xspec_var[f"p{fq1}xp{fq2}"] = knox_covar(cl13, cl24, cl14, cl23, self.fsky, \
+                                                             self.e_l, self.bin_width)
+            plt.errorbar(self.e_l[self.msk], self.ee_specs[f"p{fq1}xp{fq2}"][self.msk], \
+                         self.ee_xspec_var[f"p{fq1}xp{fq2}"][self.msk]**0.5, \
+                 label=f"p{fq1}xp{fq2}", marker='o')
+        plt.step(self.e_l[self.msk], self.camb_dl[self.msk], c='k', ls='--', where='mid')
+        plt.loglog()
+        plt.legend()
+        plt.ylabel(r"D$\ell$ ($\mu$K$^2$)")
+        plt.xlabel(r"$\ell$")
+        plt.savefig(f"{self.result_dir}plk_cross_spec.png")
+
 
     def init_so_f2(self):
         print("init SO spin 2 fields")
@@ -122,43 +133,54 @@ class TF_Calib:
 
     def calc_so_x_planck(self):
         print("calculating planck x SO spectra")
-        plt.figure(dpi=300)
         for fs, fp in itertools.product(self.so_freqs, self.planck_freqs):
             print(f"s{fs}xp{fp}")
             self.so_x_planck[f"s{fs}xp{fp}"] = nmt.compute_full_master(self.so_f2[fs], self.planck_f2[fp], self.bins)[0]
             plt.loglog(self.e_l[self.msk], self.so_x_planck[f"s{fs}xp{fp}"][self.msk], label=f"s{fs}xp{fp}")
-        plt.legend()
-        plt.savefig(self.result_dir + "SOxPlk_spec.png")
+
 
     def calc_so_x_planck_var(self):
         print("calculating SO x planck variance")
+        plt.figure(dpi=300)
+        plt.step(self.e_l[self.msk], self.camb_dl[self.msk], c='k', ls='--', where='mid')
         for fs, fp in itertools.product(self.so_freqs, self.planck_freqs):
             print(f"s{fs}xp{fp}")
             cl13 = self.so_auto[fs]
             cl24 = self.ee_specs[f"p{fp}xp{fp}"]
             cl14 = cl23 = self.so_x_planck[f"s{fs}xp{fp}"]
-            self.so_x_planck_var[f"s{fs}xp{fp}"] = knox_covar(cl13, cl24, cl14, cl23, self.fsky, self.e_l, self.bin_width)
+            self.so_x_planck_var[f"s{fs}xp{fp}"] = knox_covar(cl13, cl24, cl14, cl23, self.fsky, \
+                                                              self.e_l, self.bin_width)
+            plt.errorbar(self.e_l[self.msk],  self.so_x_planck[f"s{fs}xp{fp}"][self.msk], \
+                         self.so_x_planck_var[f"s{fs}xp{fp}"][self.msk]**0.5, label=f"s{fs}xp{fp}")
+        plt.loglog()
+        plt.legend()
+        plt.savefig(self.result_dir + "SOxPlk_spec.png")
 
     def estimate_tf(self):
         print("Estimate transfer function")
         tf_res = np.zeros((self.msk.sum(), 7))
         for bin_ind in range(self.msk.sum()):
+            # data container created for holding values for fitting
+            # f1, f2, ef1, ef2, spec, spec_err
             freq_data_holder_full = np.zeros((14, 6))
+
+            # grab information from planck cross spectra
             for i, ((f1, f2), (fd1, fd2)) in enumerate(zip(itertools.combinations(self.planck_freqs, 2), \
                                                            itertools.combinations(self.planck_dust_eff_freqs, 2))):
                 freq_data_holder_full[i] = f1, f2, fd1, fd2, self.ee_specs[f"p{f1}xp{f2}"][self.msk][bin_ind], \
                     self.ee_xspec_var[f"p{f1}xp{f2}"][self.msk][bin_ind]
             
+            # grab info from so x planck spectra            
             for i, (fs, (fp, fdp)) in enumerate(itertools.product(self.so_freqs, zip(self.planck_freqs, self.planck_dust_eff_freqs))):
-                freq_data_holder_full[i + 6] = fs, fp, fs, fdp, self.so_x_planck[f"s{fs}xp{fp}"][self.msk][bin_ind], \
+                freq_data_holder_full[i + 6] = fs, fp, fs, fdp, \
+                    self.so_x_planck[f"s{fs}xp{fp}"][self.msk][bin_ind], \
                     self.so_x_planck_var[f"s{fs}xp{fp}"][self.msk][bin_ind]
-
             dust_unity = dust_dl(1., freq_data_holder_full[:, 2], freq_data_holder_full[:, 3], 1.53) \
-                * pygsm.trj2tcmb(freq_data_holder_full[:, 2]) * pygsm.trj2tcmb(freq_data_holder_full[:, 2])
+                * pygsm.trj2tcmb(freq_data_holder_full[:, 2]) * pygsm.trj2tcmb(freq_data_holder_full[:, 3])
             ee = self.camb_dl[self.msk][bin_ind]
-
             res = opt.minimize(dust_neg_lnlike, 1, (dust_unity[:6], ee, freq_data_holder_full[:6, 4], \
                                                     freq_data_holder_full[:6, 5]))
+
             a = res.x[0]
             a_var = hess_inv(dust_unity[:6], freq_data_holder_full[:6, 5])
             # print(res)
@@ -185,12 +207,8 @@ class TF_Calib:
         plt.errorbar(self.tf[0], self.tf[3], self.tf[4]**0.5, ls='--', marker='.', label="90")
         plt.errorbar(self.tf[0] + 2, self.tf[5], self.tf[6]**0.5, ls='--', marker='.', label="150")
         plt.ylabel('transfer func')
-        plt.ylim(1e-3, 1)
-        # plt.ylim(-0.1, 1.1)
-        plt.fill_between((30, 80), (-0.1, -0.1), (1.1, 1.1), color='gray', alpha=.3)
-        plt.fill_between((180, 240), (-0.1, -0.1), (1.1, 1.1), color='gray', alpha=.3)
-        plt.legend()
         plt.loglog()
+        plt.legend()
         plt.savefig(self.result_dir + "transfer_function.png")
         selected_cols = [0, 3, 4, 5, 6]
         np.save(self.result_dir + "tf_ee.npy", self.tf[selected_cols].T)
