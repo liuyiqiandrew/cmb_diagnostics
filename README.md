@@ -8,6 +8,7 @@ This repo contains code to derive calibration information for SO cmb maps.
 - numpy
 - healpy
 - pixell
+- pygsm(https://github.com/liuyiqiandrew/pygsm)
 
 ## Installation
 Clone the repo, add the path of the parental directory of the repo to PYTHONPATH
