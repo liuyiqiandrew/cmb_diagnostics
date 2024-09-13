@@ -6,6 +6,7 @@ import itertools
 import matplotlib.pyplot as plt
 
 class PSContainer:
+    # container for handling all power spectra
     def __init__(self, nside=512):
 
         self.nside = nside
@@ -17,6 +18,7 @@ class PSContainer:
         self.planck_beams = np.array([9.66, 7.27, 5.01, 4.86])
 
         self.planck_fname = '/home/yl9946/projects/tp_leakage/planck_equatorial/planck_{}_equatorial_rm_mnp_dp.fits'
+        self.planck_f0 = {}
         self.planck_f2 = {}
         
         # initialize so
@@ -24,6 +26,7 @@ class PSContainer:
         self.so_freqs = np.array([90, 150])
         self.so_beams = np.array([27.4, 17.6])
         self.so_f2 = {}
+        self.so_f0 = {}
         
         # mask
         self.mask = None
@@ -38,15 +41,24 @@ class PSContainer:
 
         # camb reference values
         self.camb_dl_path = "/scratch/gpfs/yl9946/basic_science/camb_lens_nobb.dat"
-        self.camb_dl = None
+        self.camb_ee = None
+        self.camb_te = None
 
         # planck EE
         self.planck_ee = {}
-        self.planck_xspec_ee = {}
+        self.planck_tt = {}
+        self.planck_xspec_ee_var = {}
+        self.planck_xspec_te_var = {}
+        self.planck_te = {}
+        self.planck_te_var = {}
 
-        self.so_auto = {}
-        self.so_x_planck = {}
-        self.so_x_planck_var = {}
+
+        self.so_ee_auto = {}
+        self.so_tt_auto = {}
+        self.so_x_planck_ee = {}
+        self.so_x_planck_ee_var = {}
+        self.so_x_planck_te = {}
+        self.so_x_planck_te_var = {}
 
         self.result_dir = "/home/yl9946/projects/cmb_diagnostics/result/"
 
@@ -74,7 +86,10 @@ class PSContainer:
         dl_tmp = np.loadtxt(self.camb_dl_path)
         dl_tmp = np.concatenate((np.zeros((1, 5)), dl_tmp))
         dl_bin = self.bins.bin_cell(dl_tmp[:self.nside * 3, 2]) * self.e_dl2cl
-        self.camb_dl = dl_bin
+        self.camb_ee = dl_bin
+        dl_bin = self.bins.bin_cell(dl_tmp[:self.nside * 3, 4]) * self.e_dl2cl
+        self.camb_te = dl_bin
+
 
     def init_planck_f2(self):
         print("init planck spin 2 fields")
@@ -85,33 +100,87 @@ class PSContainer:
             plk_qu = hp.ud_grade(plk_qu, 512)
             self.planck_f2[f] = nmt.NmtField(self.mask, plk_qu, beam=gbeam, spin=2)
 
-    def calc_planck_specs(self):
-        print("calculating planck spectra")
+    def init_planck_f0(self):
+        print("init planck spin 0 fields")
+        for f, fwhm in zip(self.planck_freqs, self.planck_beams):
+            print(f"|-{f}")
+            gbeam = hp.gauss_beam(fwhm / 60 / 180 * np.pi, self.nside * 3 - 1)
+            plk_t = hp.read_map(self.planck_fname.format(f), field=0) * 1e6
+            plk_t = hp.ud_grade(plk_t, 512)
+            self.planck_f0[f] = nmt.NmtField(self.mask, [plk_t], beam=gbeam, spin=0)
+
+    def calc_planck_ee(self):
+        print("calculating planck EE spectra")
         for fq1, fq2 in itertools.combinations_with_replacement(self.planck_freqs, 2):
             print(f"|-p{fq1}xp{fq2}")
             nmt_spec = nmt.compute_full_master(self.planck_f2[fq1], self.planck_f2[fq2], self.bins)
             self.planck_ee[f"p{fq1}xp{fq2}"] = nmt_spec[0]
 
-    def calc_planck_xspec_var(self):
-        print("calculating planck cross spectra variance")
+    def calc_planck_ee_auto(self):
+        print("Calculating planck EE spectra (auto only)")
+        for f in self.planck_freqs:
+            print(f"|-p{f}")
+            nmt_spec = nmt.compute_full_master(self.planck_f2[f], self.planck_f2[f], self.bins)
+            self.planck_ee[f"p{f}xp{f}"] = nmt_spec[0]
+
+    def calc_planck_tt_auto(self):
+        print("Calculating planck TT spectra (auto only)")
+        for f in self.planck_freqs:
+            print(f"|-p{f}")
+            nmt_spec = nmt.compute_full_master(self.planck_f0[f], self.planck_f0[f], self.bins)
+            self.planck_tt[f"p{f}xp{f}"] = nmt_spec[0]
+
+    def calc_planck_te(self):
+        print("calculating planck TE spectra")
+        for fq1, fq2 in itertools.product(self.planck_freqs, self.planck_freqs):
+            if fq1 == fq2:
+                continue
+            print(f"|-p{fq1}xp{fq2}")
+            nmt_spec = nmt.compute_full_master(self.planck_f0[fq1], self.planck_f2[fq2], self.bins)
+            self.planck_te[f"p{fq1}xp{fq2}"] = nmt_spec[0]
+
+    def calc_planck_xspec_ee_var(self):
+        print("calculating planck EE cross spectra variance")
         plt.figure(dpi=300)
         for fq1, fq2 in itertools.combinations(self.planck_freqs, 2):
             print(f"|-p{fq1}xp{fq2}")
             cl13 = self.planck_ee[f"p{fq1}xp{fq1}"]
             cl24 = self.planck_ee[f"p{fq2}xp{fq2}"]
             cl14 = cl23 = self.planck_ee[f"p{fq1}xp{fq2}"]
-            self.planck_xspec_ee[f"p{fq1}xp{fq2}"] = knox_covar(cl13, cl24, cl14, cl23, self.fsky, \
+            self.planck_xspec_ee_var[f"p{fq1}xp{fq2}"] = knox_covar(cl13, cl24, cl14, cl23, self.fsky, \
                                                              self.e_l, self.bin_width)
             plt.errorbar(self.e_l[self.msk], self.planck_ee[f"p{fq1}xp{fq2}"][self.msk], \
-                         self.planck_xspec_ee[f"p{fq1}xp{fq2}"][self.msk]**0.5, \
-                 label=f"p{fq1}xp{fq2}", marker='o')
-        plt.step(self.e_l[self.msk], self.camb_dl[self.msk], c='k', ls='--', where='mid')
+                         self.planck_xspec_ee_var[f"p{fq1}xp{fq2}"][self.msk]**0.5, \
+                         label=f"p{fq1}xp{fq2}", marker='o')
+        plt.step(self.e_l[self.msk], self.camb_ee[self.msk], c='k', ls='--', where='mid')
         plt.loglog()
         plt.legend()
         plt.ylabel(r"D$\ell$ ($\mu$K$^2$)")
         plt.xlabel(r"$\ell$")
-        plt.savefig(f"{self.result_dir}plk_cross_spec.png")
+        plt.savefig(f"{self.result_dir}plk_cross_ee.png")
 
+    def calc_planck_xspec_te_var(self):
+        print("calculating planck TE cross spectra variance")
+        plt.figure()
+        for fq1, fq2 in itertools.product(self.planck_freqs, self.planck_freqs):
+            if fq1 == fq2:
+                continue
+            print(f"|-p{fq1}xp{fq2}")
+            cl13 = self.planck_tt[f"p{fq1}xp{fq1}"]
+            cl24 = self.planck_ee[f"p{fq2}xp{fq2}"]
+            cl14 = cl23 = self.planck_te[f"p{fq1}xp{fq2}"]
+            self.planck_xspec_te_var[f"p{fq1}xp{fq2}"] = knox_covar(cl13, cl24, cl14, cl23, self.fsky,\
+                                                                self.e_l, self.bin_width)
+            plt.errorbar(self.e_l[self.msk], np.abs(self.planck_te[f"p{fq1}xp{fq2}"][self.msk]), \
+                         self.planck_xspec_te_var[f"p{fq1}xp{fq2}"][self.msk]**0.5, \
+                         label=f"t{fq1}xe{fq2}", marker='o')
+        plt.step(self.e_l[self.msk], np.abs(self.camb_te[self.msk]), c='k', ls='--', where='mid')
+        plt.loglog()
+        plt.legend()
+        plt.ylabel(r"D$\ell$ ($\mu$K$^2$)")
+        plt.xlabel(r"$\ell$")
+        plt.title("Planck x Planck")
+        plt.savefig(f'{self.result_dir}planck_cross_te.png')
 
     def init_so_f2(self):
         print("init SO spin 2 fields")
@@ -121,33 +190,62 @@ class PSContainer:
             qu_map = read_carr2healpix(self.so_fname.format(freq=fq))[1:]
             self.so_f2[fq] = nmt.NmtField(self.mask, qu_map, beam=gbeam)
 
-    def calc_so_auto(self):
-        print("calculate SO auto spectra")
+    def init_so_f0(self):
+        print("init SO spin 0 fields")
+        for fq, fwhm in zip(self.so_freqs, self.so_beams):
+            print(f"|-{fq}")
+            gbeam = hp.gauss_beam(fwhm / 60 / 180 * np.pi, self.nside * 3 - 1)
+            t_map = read_carr2healpix(self.so_fname.format(freq=fq))[0]
+            self.so_f0[fq] = nmt.NmtField(self.mask, [t_map], beam=gbeam)
+
+    def calc_so_ee_auto(self):
+        print("calculate SO EE auto spectra")
         for f in self.so_freqs:
             print(f"|-{f}")
-            self.so_auto[f] = nmt.compute_full_master(self.so_f2[f], self.so_f2[f], self.bins)[0]
+            self.so_ee_auto[f] = nmt.compute_full_master(self.so_f2[f], self.so_f2[f], self.bins)[0]
 
-    def calc_so_x_planck(self):
-        print("calculating planck x SO spectra")
+    def calc_so_x_planck_ee(self):
+        print("calculating planck x SO EE spectra")
         for fs, fp in itertools.product(self.so_freqs, self.planck_freqs):
             print(f"|-s{fs}xp{fp}")
-            self.so_x_planck[f"s{fs}xp{fp}"] = nmt.compute_full_master(self.so_f2[fs], self.planck_f2[fp], self.bins)[0]
-            plt.loglog(self.e_l[self.msk], self.so_x_planck[f"s{fs}xp{fp}"][self.msk], label=f"s{fs}xp{fp}")
+            self.so_x_planck_ee[f"s{fs}xp{fp}"] = nmt.compute_full_master(self.so_f2[fs], self.planck_f2[fp], self.bins)[0]
 
+    def calc_so_x_planck_te(self):
+        print("calculating planck x SO TE spectra")
+        for fs, fp in itertools.product(self.so_freqs, self.planck_freqs):
+            print(f"|-s{fs}xp{fp}")
+            self.so_x_planck_te[f"p{fp}xs{fs}"] = nmt.compute_full_master(self.planck_f0[fp], self.so_f2[fs], self.bins)[0]
 
-    def calc_so_x_planck_var(self):
-        print("calculating SO x planck variance")
+    def calc_so_x_planck_ee_var(self):
+        print("calculating SO x planck EE variance")
         plt.figure(dpi=300)
-        plt.step(self.e_l[self.msk], self.camb_dl[self.msk], c='k', ls='--', where='mid')
+        plt.step(self.e_l[self.msk], self.camb_ee[self.msk], c='k', ls='--', where='mid')
         for fs, fp in itertools.product(self.so_freqs, self.planck_freqs):
             print(f"|-s{fs}xp{fp}")
-            cl13 = self.so_auto[fs]
+            cl13 = self.so_ee_auto[fs]
             cl24 = self.planck_ee[f"p{fp}xp{fp}"]
-            cl14 = cl23 = self.so_x_planck[f"s{fs}xp{fp}"]
-            self.so_x_planck_var[f"s{fs}xp{fp}"] = knox_covar(cl13, cl24, cl14, cl23, self.fsky, \
+            cl14 = cl23 = self.so_x_planck_ee[f"s{fs}xp{fp}"]
+            self.so_x_planck_ee_var[f"s{fs}xp{fp}"] = knox_covar(cl13, cl24, cl14, cl23, self.fsky, \
                                                               self.e_l, self.bin_width)
-            plt.errorbar(self.e_l[self.msk],  self.so_x_planck[f"s{fs}xp{fp}"][self.msk], \
-                         self.so_x_planck_var[f"s{fs}xp{fp}"][self.msk]**0.5, label=f"s{fs}xp{fp}")
+            plt.errorbar(self.e_l[self.msk],  self.so_x_planck_ee[f"s{fs}xp{fp}"][self.msk], \
+                         self.so_x_planck_ee_var[f"s{fs}xp{fp}"][self.msk]**0.5, label=f"s{fs}xp{fp}")
         plt.loglog()
         plt.legend()
         plt.savefig(self.result_dir + "so_x_planck_ee.png")
+
+    def calc_so_x_planck_te_var(self):
+        print("calculating SO x planck TE variance")
+        plt.figure(dpi=300)
+        plt.step(self.e_l[self.msk], np.abs(self.camb_te[self.msk]), c='k', ls='--', where='mid')
+        for fs, fp in itertools.product(self.so_freqs, self.planck_freqs):
+            print(f"|-s{fs}xp{fp}")
+            cl13 = self.planck_tt[f"p{fp}xp{fp}"]
+            cl24 = self.so_ee_auto[fs]
+            cl14 = cl23 = self.so_x_planck_te[f"p{fp}xs{fs}"]
+            self.so_x_planck_te_var[f"p{fp}xs{fs}"] = knox_covar(cl13, cl24, cl14, cl23, self.fsky, \
+                                                              self.e_l, self.bin_width)
+            plt.errorbar(self.e_l[self.msk],  np.abs(self.so_x_planck_te[f"p{fp}xs{fs}"][self.msk]), \
+                         self.so_x_planck_te_var[f"p{fp}xs{fs}"][self.msk]**0.5, label=f"p{fp}xs{fs}")
+        plt.loglog()
+        plt.legend()
+        plt.savefig(self.result_dir + "so_x_planck_te.png")
