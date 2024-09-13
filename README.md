@@ -19,7 +19,9 @@ At the moment, the repo supports:
 - Estimating polarization angle from SO EB spectra.
 
 ## Example
-In `test/example.py`. If you're on Della, you can run the codes directly. Resources are hard coded. You will derive the results for 20240714 SAT-P3 maps. Otherwise, you'll need to prepare stuffs below and modify attributes in each class accordingly. See next paragraph for what you need to prepare
+In `test/example.py`. If you're on Della, you can run the codes directly. Resources are hard coded. You will derive the results for 20240714 SAT-P3 maps. Otherwise, you'll need to prepare stuffs below and modify attributes in each class accordingly. See next paragraph for what you need to prepare.
+
+If cmb_util(https://github.com/liuyiqiandrew/cmb_utils) is available on git. Feel free to grab functions directly from repo or add it to your PYTHONPATH.
 
 ## What's about the code
 Apologies for the horrible user interface, I may consider refining it if I have more spare time. I would strongly suggest skim through `PSContainer` to get a sense in how the code works. In particular, understanding the constructor and initalizer for namaster field `init_planck_f2(self)` will give you a good sense on how to format file name and frequency information.
