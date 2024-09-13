@@ -4,6 +4,7 @@ import pymaster as nmt
 import numpy as np
 import itertools
 import matplotlib.pyplot as plt
+import os
 
 class PSContainer:
     # container for handling all power spectra
@@ -35,6 +36,8 @@ class PSContainer:
         # namaster power spectra parameters
         self.bins = None
         self.bin_width = None
+        self.lmin = 30
+        self.lmax = 300
         self.e_l = None
         self.e_dl2cl = None
         self.msk = None
@@ -53,14 +56,21 @@ class PSContainer:
         self.planck_te_var = {}
 
 
-        self.so_ee_auto = {}
-        self.so_tt_auto = {}
+        self.so_ee = {}
+        self.so_bb = {}
+        self.so_be = {}
+        self.so_eb = {}
+        self.so_eb_var = {}
         self.so_x_planck_ee = {}
         self.so_x_planck_ee_var = {}
         self.so_x_planck_te = {}
         self.so_x_planck_te_var = {}
 
-        self.result_dir = "/home/yl9946/projects/cmb_diagnostics/result/"
+        # self.result_dir = "/home/yl9946/projects/cmb_diagnostics/result/"
+        print("Results directory is")
+        cur_path = os.path.dirname(os.path.abspath(__file__))
+        print(os.path.abspath(f"{cur_path}/../result/"))
+        self.result_dir = os.path.abspath(f"{cur_path}/../result/") + '/'
 
     def init_mask(self, mask):
         print("init mask")
@@ -75,6 +85,8 @@ class PSContainer:
 
     def init_nmt(self, bin_width=20, lmin=30, lmax=300):
         print("init NaMaster")
+        self.lmin = lmin
+        self.lmax = lmax
         self.bins = nmt.NmtBin.from_nside_linear(self.nside, bin_width, is_Dell=True)
         self.bin_width = bin_width
         self.e_l = self.bins.get_effective_ells()
@@ -202,7 +214,17 @@ class PSContainer:
         print("calculate SO EE auto spectra")
         for f in self.so_freqs:
             print(f"|-{f}")
-            self.so_ee_auto[f] = nmt.compute_full_master(self.so_f2[f], self.so_f2[f], self.bins)[0]
+            self.so_ee[f"s{f}xs{f}"] = nmt.compute_full_master(self.so_f2[f], self.so_f2[f], self.bins)[0]
+
+    def calc_so_pol_specs(self):
+        print("calculate SO EE, EB, BE, BB")
+        for f1, f2 in itertools.combinations_with_replacement(self.so_freqs, 2):
+            print(f"|-s{f1}xs{f2}")
+            nmt_spec = nmt.compute_full_master(self.so_f2[f1], self.so_f2[f2], self.bins)
+            self.so_ee[f"s{f1}xs{f2}"] = nmt_spec[0]
+            self.so_bb[f"s{f1}xs{f2}"] = nmt_spec[3]
+            self.so_eb[f"s{f1}xs{f2}"] = nmt_spec[1]
+            self.so_be[f"s{f1}xs{f2}"] = nmt_spec[2]
 
     def calc_so_x_planck_ee(self):
         print("calculating planck x SO EE spectra")
@@ -222,7 +244,7 @@ class PSContainer:
         plt.step(self.e_l[self.msk], self.camb_ee[self.msk], c='k', ls='--', where='mid')
         for fs, fp in itertools.product(self.so_freqs, self.planck_freqs):
             print(f"|-s{fs}xp{fp}")
-            cl13 = self.so_ee_auto[fs]
+            cl13 = self.so_ee[f"s{fs}xs{fs}"]
             cl24 = self.planck_ee[f"p{fp}xp{fp}"]
             cl14 = cl23 = self.so_x_planck_ee[f"s{fs}xp{fp}"]
             self.so_x_planck_ee_var[f"s{fs}xp{fp}"] = knox_covar(cl13, cl24, cl14, cl23, self.fsky, \
@@ -240,7 +262,7 @@ class PSContainer:
         for fs, fp in itertools.product(self.so_freqs, self.planck_freqs):
             print(f"|-s{fs}xp{fp}")
             cl13 = self.planck_tt[f"p{fp}xp{fp}"]
-            cl24 = self.so_ee_auto[fs]
+            cl24 = self.so_ee[f"s{fs}xs{fs}"]
             cl14 = cl23 = self.so_x_planck_te[f"p{fp}xs{fs}"]
             self.so_x_planck_te_var[f"p{fp}xs{fs}"] = knox_covar(cl13, cl24, cl14, cl23, self.fsky, \
                                                               self.e_l, self.bin_width)
@@ -249,3 +271,23 @@ class PSContainer:
         plt.loglog()
         plt.legend()
         plt.savefig(self.result_dir + "so_x_planck_te.png")
+
+    def calc_so_eb_var(self, eb_lmax=500):
+        print("calculate SO eb error bar")
+        tmp_msk = (self.e_l > self.lmin) * (self.e_l < eb_lmax)
+        plt.figure(dpi=300)
+        for f1, f2 in itertools.combinations_with_replacement(self.so_freqs, 2):
+            print(f"|-s{f1}xs{f2}")
+            cl13 = self.so_ee[f"s{f1}xs{f2}"]
+            cl24 = self.so_bb[f"s{f1}xs{f2}"]
+            cl23 = self.so_be[f"s{f1}xs{f2}"]
+            cl14 = self.so_eb[f"s{f1}xs{f2}"]
+            self.so_eb_var[f"s{f1}xs{f2}"] = np.abs(knox_covar(cl13, cl24, cl14, cl23, \
+                                                               self.fsky, self.e_l, self.bin_width))
+            plt.errorbar(self.e_l[tmp_msk], self.so_eb[f"s{f1}xs{f2}"][tmp_msk], \
+                         self.so_eb_var[f"s{f1}xs{f2}"][tmp_msk]**0.5, label=f"s{f1}xs{f2}")
+        plt.axhline(ls='--', c='k')
+        plt.legend(loc='upper left')
+        plt.ylabel(r"D$\ell^{EB}$ [$\mu$K$^2$]")
+        plt.xlabel(r"$\ell$")
+        plt.savefig(f"{self.result_dir}so_eb_specs.png")

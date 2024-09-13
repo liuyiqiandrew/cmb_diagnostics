@@ -64,3 +64,17 @@ def tf_neg_lnlike(f, a, dust_unity, ee, data, var):
 
 def hess_inv(dmdq, var):
     return 1 / (dmdq**2 / var).sum()
+
+
+def res2ang(res):
+    a = res.x[0]
+    return np.arctan(a * 2) / 4
+
+
+def pol_ang_cost(a, data, model_unity):
+    return ((data - a * model_unity)**2).sum()
+
+
+def neg_amp_lnlike(a, template, data, var):
+    model = a * template
+    return -log_gauss_like(data, model, var)
