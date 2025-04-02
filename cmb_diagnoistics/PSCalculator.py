@@ -73,4 +73,29 @@ class PSCalculator:
             self.pp_container.add_spectrum('BB', t1, t2, bb, dbb)
 
     def __calculate_tp_spectra(self):
-        pass
+
+        tr1 = self.fc1.get_spin0_field().keys()
+        tr2 = self.fc2.get_spin2_field().keys()
+
+        aux_specst = {}
+        for key in tr1:
+            f0 = self.fc1.get_spin0_field(key)
+            aux_specst[key] = nmt.compute_full_master(f0, f0, self.bins)
+        
+        aux_specsp = {}
+        for key in tr2:
+            f2 = self.fc2.get_spin2_field(key)
+            aux_specsp[key] = nmt.compute_full_master(f2, f2, self.bins)
+
+        for t1, t2 in itertools.product(tr1, tr2):
+            f0_1 = self.fc1.get_spin0_field(t1)
+            f2_2 = self.fc2.get_spin2_field(t2)
+
+            te, tb = nmt.compute_full_master(f0_1, f2_2, self.bins)
+            dte = knox_covar(aux_specst[t1][0], aux_specsp[t2][0], te, te, \
+                             self.fsky, self.eff_ell, self.bin_width)
+            dtb = knox_covar(aux_specst[t1][0], aux_specsp[t2][3], tb, tb, \
+                             self.fsky, self.eff_ell, self.bin_width)
+            
+            self.tp_container.add_spectrum('TE', t1, t2, te, dte)
+            self.tp_container.add_spectrum('TB', t1, t2, te, dtb)
