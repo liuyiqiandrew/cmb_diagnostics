@@ -3,7 +3,7 @@ from .Constants import PSType
 import pymaster as nmt
 import numpy as np
 import itertools
-from .utils import knox_covar
+from .diag_utils import knox_covar
 
 
 class PSCalculator:
@@ -39,7 +39,6 @@ class PSCalculator:
             case PSType.TP:
                 self.__calculate_tp_spectra()
 
-
     def __calculate_pp_spectra(self):
 
         tr1 = self.fc1.get_spin2_field().keys()
@@ -54,6 +53,7 @@ class PSCalculator:
         for key in tr2:
             f2 = self.fc2.get_spin2_field(key)
             aux_specs2[key] = nmt.compute_full_master(f2, f2, self.bins)
+        print("Aux specs created")
 
         for t1, t2 in itertools.product(tr1, tr2):
             f2_1 = self.fc1.get_spin2_field(t1)

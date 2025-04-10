@@ -1,4 +1,4 @@
-from .utils import *
+from .diag_utils import *
 import healpy as hp
 import pymaster as nmt
 import numpy as np

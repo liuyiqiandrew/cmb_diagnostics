@@ -1,4 +1,4 @@
-from ..cmb_diagnoistics.utils import *
+from ..cmb_diagnoistics.diag_utils import *
 import healpy as hp
 import pymaster as nmt
 import numpy as np

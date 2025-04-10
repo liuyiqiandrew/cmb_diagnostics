@@ -1,4 +1,4 @@
-from .utils import *
+from .diag_utils import *
 from .PSContainer import PSContainer
 import itertools
 import scipy.optimize as opt

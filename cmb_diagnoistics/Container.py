@@ -1,6 +1,6 @@
 import pymaster as nmt
 import numpy as np
-from typing import Hashable, Tuple, overload
+from typing import Hashable
 from .Constants import PSType
 
 
@@ -16,8 +16,8 @@ class NmtFieldContainer:
 
     def add_spin2_field(
         self, 
-        f2:nmt.NmtField, 
-        key: Hashable
+        key: Hashable,
+        f2:nmt.NmtField
     ) -> None:
         """ Add or update spin-2 field """
         if f2.get_maps().shape[0] != 2:
@@ -26,8 +26,8 @@ class NmtFieldContainer:
 
     def add_spin0_field(
         self,
-        f0:nmt.NmtField,
-        key:Hashable
+        key:Hashable,
+        f0:nmt.NmtField
     ) -> None:
         """ Add or update spin-0 field"""
         if f0.get_maps().shape[0] != 1:
@@ -128,7 +128,7 @@ class PSContainer:
         tracer = (freq1, freq2)
         self.ps[comp][tracer] = cl
         self.dps[comp][tracer] = dcl
-        self.tracers[comp].add[tracer]
+        self.tracers[comp].add(tracer)
 
     def get_spectrum(
         self,
