@@ -42,7 +42,7 @@ class PSCalculator:
     def __calculate_pp_spectra(self):
 
         tr1 = self.fc1.get_spin2_field().keys()
-        tr2 = self.fc1.get_spin2_field().keys()
+        tr2 = self.fc2.get_spin2_field().keys()
 
         aux_specs1 = {}
         for key in tr1:

@@ -48,7 +48,6 @@ def main():
         f2 = nmt.NmtField(mask, so_map[1:], beam=so_beams[idx])
         so_field_container.add_spin0_field(so_freqs[idx], f0)
         so_field_container.add_spin2_field(so_freqs[idx], f2)
-        
 
     bins = nmt.NmtBin.from_nside_linear(512, 20, True)
 
