@@ -19,3 +19,11 @@ def amp_dust_mbb(params, x, args):
     mbb_bb = planck_law(T_d, f1) * planck_law(T_d, f2) / planck_law(T_d, nu0)**2
     mbb_factor = mbb_pl * mbb_bb * r2c_f1 * r2c_f2
     return amp * mbb_factor
+
+
+def tf_model(param, x):
+    """
+    param = (1/tf)
+    """
+    tf_fac = param[0]
+    return 1/tf_fac * x

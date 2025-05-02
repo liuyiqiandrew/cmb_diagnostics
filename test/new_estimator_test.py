@@ -4,6 +4,7 @@ import cmb_diagnostics
 import pymaster as nmt
 from cmb_diagnostics.cmb_diagnoistics.Constants import PSType
 from cmb_diagnostics.cmb_diagnoistics.diag_utils import read_carr2healpix
+from cmb_diagnostics.cmb_diagnoistics.Estimator import SOPlkTF
 import cmb_utils
 import itertools
 import matplotlib.pyplot as plt
@@ -28,6 +29,7 @@ def main():
     plk_field_container = cmb_diagnostics.Container.NmtFieldContainer("Planck")
     print("Create Planck Fields")
     for idx, fname in enumerate(planck_fnames):
+        print(idx)
         pmaps_raw = hp.read_map(fname, field=[0, 1, 2]) * 1e6
         pmaps = hp.ud_grade(pmaps_raw, 512)
         f0 = nmt.NmtField(mask, pmaps[:1], beam=planck_beams[idx])
@@ -43,6 +45,7 @@ def main():
     so_field_container = cmb_diagnostics.Container.NmtFieldContainer("SO")
     print("Create SO Field")
     for idx, fname in enumerate(so_fnames):
+        print(idx)
         so_map = read_carr2healpix(fname)
         f0 = nmt.NmtField(mask, so_map[:1], beam=so_beams[idx])
         f2 = nmt.NmtField(mask, so_map[1:], beam=so_beams[idx])
@@ -69,21 +72,14 @@ def main():
     e_l = plk_pp_calculator.eff_ell
     msk = (e_l > 30) * (e_l < 300)
 
-    print("Plot figure")
-    plt.figure()
-    for f1, f2 in itertools.combinations(planck_freqs, 2):
-        dl = plk_pp.get_spectrum('EE', f1, f2)
-        plt.loglog(e_l[msk], dl[msk], label=f"{f1}x{f2}")
-    plt.legend()
-    plt.savefig('test_planck_auto.png')
+    print("Start TF estimation")
+    TFEst = SOPlkTF(plk_pp, sp_pp, bins)
+    tf90 = TFEst.calc_tf(90)
+    tf150 = TFEst.calc_tf(150)
     
-    plt.figure()
-    for f1, f2 in itertools.product(so_freqs, planck_freqs):
-        dl = sp_pp.get_spectrum('EE', f1, f2)
-        plt.loglog(e_l[msk], dl[msk], label=f"{f1}x{f2}")
-    plt.legend()
-    plt.savefig("test_sxp.png")
-
+    plt.loglog(e_l[msk], tf90)
+    plt.loglog(e_l[msk], tf150)
+    plt.savefig("TF.png")
 
 
 if __name__ == "__main__":
