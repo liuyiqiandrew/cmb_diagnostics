@@ -2,7 +2,7 @@ import pymaster as nmt
 import numpy as np
 from typing import Hashable
 from .Constants import PSType
-
+import json
 
 class NmtFieldContainer:
     """ Container holding NaMaster spin fields """
@@ -168,4 +168,14 @@ class PSContainer:
         else:
             return self.ps[comp][tracer], self.ps[comp][tracer]
         
-    
+    def save_container(self, fname):
+        content = {
+            'name1':self.name1,
+            'name2':self.name2,
+            'pstype':self.pstype.value,
+            'ps':self.ps,
+            'dps':self.dps,
+            'tracers':self.tracers
+        }
+        with open(fname, 'w') as f:
+            json.dump(content, f)

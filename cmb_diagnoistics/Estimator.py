@@ -48,6 +48,7 @@ class SOPlkTF:
         beta_d = 1.6,
         T_d = 19.6,
         nu0 = 353.,
+        nside = 512,
         dust_model = amp_dust_mbb,
         so_freq = np.array([90, 150])
     ):
@@ -76,13 +77,13 @@ class SOPlkTF:
         self.nu0 = nu0
 
         camb_dl = np.loadtxt("/scratch/gpfs/yl9946/basic_science/camb_lens_nobb.dat")
-        camb_dl = np.concatenate([np.zeros(5, dtype=np.float64)[None, :], camb_dl], axis=1)
+        camb_dl = np.concatenate([np.zeros(5, dtype=np.float64)[None, :], camb_dl], axis=0)
         match self.tftype:
             case PSType.PP:
-                self.cmb_ee = self.bins.bin_cell(camb_dl[:, 2]) * self.e_dl2cl
-                self.cmb_bb = self.bins.bin_cell(camb_dl[:, 3]) * self.e_dl2cl
+                self.cmb_ee = self.bins.bin_cell(camb_dl[:nside*3, 2]) * self.e_dl2cl
+                self.cmb_bb = self.bins.bin_cell(camb_dl[:nside*3, 3]) * self.e_dl2cl
             case PSType.TP:
-                self.cmb_te = self.bins.bin_cell(camb_dl[:, 4]) * self.e_dl2cl
+                self.cmb_te = self.bins.bin_cell(camb_dl[:nside*3, 4]) * self.e_dl2cl
         
     def calc_tf(self, freq):
         if (self.so_freq == freq).sum() == 0:
@@ -92,9 +93,10 @@ class SOPlkTF:
                 self.__tf_ee(freq)
             case PSType.TP:
                 self.__tf_te()
+        return self.tf
 
     def __tf_ee(self, so_freq):
-        self.tf = np.zeros_like(self.msk_bin_ind, dtype=np.float64)
+        self.tf = np.zeros(self.msk.sum())
         # estimate dust first
         so_freq = int(so_freq)
         f1, f2, pxp_dust_specs, dpxp_dust_specs = [], [], [], []
@@ -124,12 +126,12 @@ class SOPlkTF:
             dpxp = pxp_dust_specs[:, i]
             dfit = self.__est_dust_amp(f1, f2, pxp, dpxp)
             
-            plk_ps_est = dfit.eval(psf) + self.cmb_ee[i]
+            plk_ps_est = dfit.eval(psf) + self.cmb_ee[self.msk][i]
             pxs = pxs_specs[:, i] # get Plk x SO at the bin
             dpxs = dpxs_specs[:, i] # error for Plk x SO
             tf_fitter = Fitter(tf_model, (1.), pxs, plk_ps_est, args=None, dy=dpxs)
             self.tf[i] = tf_fitter.fit_result.x[0]**2
-        return self.tf
+        
 
 
     def __est_dust_amp(self, f1, f2, pxp, dpxp):
