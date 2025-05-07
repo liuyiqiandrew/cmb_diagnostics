@@ -19,10 +19,11 @@ def main():
     # ap_m2 = cmb_utils.maptools.apodize_square_mask(mask2)
     # mask = ap_m1 + ap_m2
     
-    # mask = read_carr2healpix("/scratch/gpfs/yl9946/iso_maps/mask/analysis_mask_satp3.fits")
-    mask = read_carr2healpix("/scratch/gpfs/yl9946/iso_maps/mask/apomask_ISO_f090.fits")
+    mask = read_carr2healpix("/scratch/gpfs/yl9946/iso_maps/mask/analysis_mask_satp3.fits")
+    # mask = read_carr2healpix("/scratch/gpfs/yl9946/iso_maps/mask/apomask_ISO_f090.fits")
     mask *= mask > 0.00001
     mask = hp.ud_grade(mask, 512)
+    # mask_binary = mask > 0
     fsky = mask.sum() / hp.nside2npix(512)
 
 
@@ -47,15 +48,16 @@ def main():
     so_beams = [hp.gauss_beam((fwhm / 60 / 180) * np.pi, 512 * 3) for fwhm in so_beam_fwhm]
     so_freqs = np.array([90, 150])
     # so_fnames = [f"/scratch/gpfs/sa5705/shared/SO_SAT/satp3_maps/cmb_maps_satp3_20240714/map_f{freq:03d}_muKcmb.fits" for freq in so_freqs]
-    # so_fnames = [f"/scratch/gpfs/yl9946/iso_maps/maps/satp3_f{freq:03d}_full_map.fits" for freq in so_freqs]
-    so_fnames = [f"/scratch/gpfs/yl9946/iso_maps/ml_maps/TQU_ISO_f{freq:03d}_demod_ml_map_v1_kxmin=30_kymin=20_apodized.fits" for freq in so_freqs]
+    so_fnames = [f"/scratch/gpfs/yl9946/iso_maps/maps/satp3_f{freq:03d}_full_map.fits" for freq in so_freqs] # FB
+    # so_fnames = [f"/scratch/gpfs/yl9946/iso_maps/ml_maps/TQU_ISO_f{freq:03d}_demod_ml_map_v1_kxmin=30_kymin=20_apodized.fits" for freq in so_freqs] # ML
 
     so_field_container = cmb_diagnostics.Container.NmtFieldContainer("SO")
     print("Create SO Field")
     for idx, fname in enumerate(so_fnames):
         print(idx)
-        so_map = read_carr2healpix(fname) # * 1e6
+        so_map = read_carr2healpix(fname) * 1e6
         so_map = hp.ud_grade(so_map, 512)
+        # so_map = so_map / mask * mask_binary
         f0 = nmt.NmtField(mask, so_map[:1], beam=so_beams[idx])
         f2 = nmt.NmtField(mask, so_map[1:], beam=so_beams[idx])
         so_field_container.add_spin0_field(so_freqs[idx], f0)
@@ -86,19 +88,23 @@ def main():
     print("Start TF estimation")
     TFEst = SOPlkTF(plk_pp, sp_pp, bins)
     tf90 = TFEst.calc_tf(90)
+    dtf90 = TFEst.dtf
     tf150 = TFEst.calc_tf(150)
+    dtf150 = TFEst.dtf
     
     print(tf90)
     print(tf150)
-    tfs = np.concatenate([e_l[None, msk], tf90[None, :], tf150[None, :]], axis=0)
-    np.save("ml_tf.npy", tfs)
+    tfs = np.concatenate([e_l[None, msk], tf90[None, :], dtf90[None, :], tf150[None, :], dtf150[None, :]], axis=0)
+    # np.save("ml_tf.npy", tfs)
+    np.save("bf_tf.npy", tfs)
 
     plt.figure()
-    plt.loglog(e_l[msk], tf90)
-    plt.loglog(e_l[msk], tf150)
+    plt.errorbar(e_l[msk], tf90, dtf90)
+    plt.errorbar(e_l[msk], tf150, dtf150)
     plt.xlabel(r"$\ell$")
     plt.ylabel(r"TF")
-    plt.savefig("TF3.png")
+    # plt.savefig("TF3.png")
+    plt.savefig("TF_bf.png")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ import numpy as np
 from .Container import PSContainer
 from .Constants import PSType
 from .Models import amp_dust_mbb, tf_model
+from .diag_utils import hess_inv
 import pymaster as nmt
 
 
@@ -96,7 +97,8 @@ class SOPlkTF:
         return self.tf
 
     def __tf_ee(self, so_freq):
-        self.tf = np.zeros(self.msk.sum())
+        self.tf = np.zeros(self.msk.sum(), dtype=np.float64)
+        self.dtf = np.zeros_like(self.tf)
         # estimate dust first
         so_freq = int(so_freq)
         f1, f2, pxp_dust_specs, dpxp_dust_specs = [], [], [], []
@@ -131,8 +133,9 @@ class SOPlkTF:
             dpxs = dpxs_specs[:, i] # error for Plk x SO
             tf_fitter = Fitter(tf_model, (1.), pxs, plk_ps_est, args=None, dy=dpxs)
             self.tf[i] = tf_fitter.fit_result.x[0]**2
-        
-
+            
+            tmp_var = hess_inv(plk_ps_est, dpxs)
+            self.dtf[i] = 4 * self.tf[i] * tmp_var
 
     def __est_dust_amp(self, f1, f2, pxp, dpxp):
         x_vals = (f1, f2)
