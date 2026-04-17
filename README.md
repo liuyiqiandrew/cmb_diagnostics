@@ -1,48 +1,117 @@
 # CMB Diagnostics
 
-This repo contains code to derive calibration information for SO cmb maps.
+Derive calibration information (transfer functions, polarization angle) for Simons Observatory CMB maps from SO × Planck cross-spectra.
+
+> **Status:** this branch (`refactor`) carries the design docs for an in-flight rewrite. The working pre-refactor code lives on `main`; see [Legacy usage](#legacy-usage-pre-refactor) below if you need to reproduce pre-refactor results.
+
+## Why this repo
+
+SO's map-maker filters the true sky and may rotate the polarization reference axis. Two effects have to be measured before SO maps can be used for cosmology:
+
+1. **Transfer function** `TF(ℓ)` — the ℓ-dependent attenuation from time-domain filtering + the map-maker.
+2. **Polarization angle** `α` — the rotation of SO's polarization reference axis, which leaks `EE − BB` into `EB`.
+
+Planck is calibrated and effectively unfiltered at the relevant scales. Using SO × Planck cross-spectra breaks the degeneracy between SO's unknown TF and the true sky, and SO's own EB carries the pol-angle signal. A modified black-body dust model is fit jointly to Planck × Planck residuals and subtracted before both estimators run.
+
+## Architecture
+
+The refactor replaces two parallel generations of entangled code with one layered architecture:
+
+```
+ CLI / scripts / notebooks
+         │
+     Pipeline
+     │      │
+ Estimators  Reports
+         │
+      Models
+         │
+      Spectra
+         │
+       Fields
+         │
+         IO
+         │
+       Config
+```
+
+- **IO** — load Planck HEALPix maps, SO CAR maps, masks, beams, CAMB reference.
+- **Fields** — build NaMaster `NmtField` objects keyed by typed `Tracer`.
+- **Spectra** — compute all required Cℓ and per-bin (Knox) variances in one pass.
+- **Models** — CMB reference, MBB dust, TF amplitude, rotation.
+- **Estimators** — `TransferFunctionEE`, `TransferFunctionTE`, `PolarizationAngleEB`. Stateless after construction; return `FitResult`.
+- **Reports** — plotting + `.npz` output. No side-effects inside estimators.
+- **Pipeline / CLI** — YAML config → end-to-end run.
+
+Full details:
+
+- [`docs/architecture.md`](docs/architecture.md) — layering, module index, dependency rules.
+- [`docs/data_model.md`](docs/data_model.md) — canonical objects (`Tracer`, `FieldSet`, `Spectra`, `FitResult`, ...).
+- [`docs/api.md`](docs/api.md) — public API, typical usage snippets.
+- [`docs/science_reference.md`](docs/science_reference.md) — every formula (TF, α, dust MBB, Knox) with source pointers.
+- [`docs/configuration.md`](docs/configuration.md) — YAML schema.
+- [`docs/migration.md`](docs/migration.md) — mapping from current classes/attributes to the new ones.
+
+## Planned usage (after implementation phases land)
+
+```python
+from cmb_diagnostics import Pipeline, Config
+
+pipe = Pipeline(Config.from_yaml("configs/satp3_south.yaml"))
+results = pipe.run()                     # dict[str, FitResult]
+results["tf_ee_so_90"].save_npz("tf_ee_so_90.npz")
+```
+
+Or via CLI (after `pip install -e .`):
+
+```
+cmb-diag run --config configs/satp3_south.yaml
+```
+
+Example configs in `configs/`:
+
+- [`configs/satp3_south.yaml`](configs/satp3_south.yaml) — SATp3, box-mask south + east patches (reproduces `test/example.py` setup).
+- [`configs/iso_satp3.yaml`](configs/iso_satp3.yaml) — SATp3 with the ISO analysis mask (reproduces `test/new_container_test.py` setup).
 
 ## Dependencies
-- namaster
-- scipy
-- numpy
-- healpy
-- pixell
-- pygsm(https://github.com/liuyiqiandrew/pygsm)
 
-## Installation
-Clone the repo, add the path of the parental directory of the repo to PYTHONPATH
+- `pymaster` (NaMaster)
+- `healpy`, `pixell` (HEALPix and CAR pixelization)
+- `scipy`, `numpy`, `matplotlib`
+- `pygsm` — **the fork at `github.com/liuyiqiandrew/pygsm`**, not the PyPI package. Provides `trj2tcmb` and `planck_law`.
 
-## Functions
-At the moment, the repo supports:
-- Estimating transfer function from EE SO x Planck cross spectra.
-- Estimating transfer function from TE SO x Planck cross spectra (Planck T, SO E).
-- Estimating polarization angle from SO EB spectra.
+## Refactor roadmap
 
-## Example
-In `test/example.py`. If you're on Della, you can run the codes directly. Resources are hard coded. You will derive the results for 20240714 SAT-P3 maps. Otherwise, you'll need to prepare stuffs below and modify attributes in each class accordingly. See next paragraph for what you need to prepare.
+| Phase | Deliverable | Status |
+|---|---|---|
+| 1 | Design docs (`docs/`) + example configs + refactor README | **done** (this branch) |
+| 2 | Package scaffold + `pyproject.toml` + pytest fixtures (no functional code) | pending |
+| 3 | Port `io/`, `fields/`, `spectra/`, `models/` + regression tests against current outputs | pending |
+| 4 | Port estimators; implement `TransferFunctionTE` properly | pending |
+| 5 | Pipeline + CLI + reports; bit-identical output to current code on frozen inputs | pending |
+| 6 | Delete `cmb_diagnoistics/`, `dev/tf_calib.py`, tracked `__pycache__/`; rename package directory | pending |
 
-If cmb_util(https://github.com/liuyiqiandrew/cmb_utils) is available on git. Feel free to grab functions directly from repo or add it to your PYTHONPATH.
+## Legacy usage (pre-refactor)
 
-## What's about the code
-Apologies for the horrible user interface, I may consider refining it if I have more spare time. I would strongly suggest skim through `PSContainer` to get a sense in how the code works. In particular, understanding the constructor and initalizer for namaster field `init_planck_f2(self)` will give you a good sense on how to format file name and frequency information.
+The pre-refactor code on the `main` branch is still functional. If you need it:
 
-Currently, all estimator class inherits from `PSContainer` which handles all power spectra information. Estimator is only responsible for the final estimator specific computation (i.e. transfer function, polarization angle etc.) and saving the result.
+```python
+import cmb_diagnostics
+tf_ee = cmb_diagnostics.TransferFuncEE()
+tf_ee.planck_fname = '/path/to/planck_{}.fits'
+tf_ee.so_fname     = '/path/to/so_f{freq:03d}.fits'
+tf_ee.camb_dl_path = '/path/to/camb_lens_nobb.dat'
+tf_ee.init_mask(mask_hp)
+tf_ee.calc_tf_ee()
+```
 
-### What you need to prepare
-- Planck maps in equatorial coordinates and HealPix Pixellization (if you're on della, they are availale at `/home/yl9946/projects/tp_leakage/planck_equatorial/planck_*_equatorial_rm_mnp_dp.fits`). You need to modify the path to these maps by, for example
-  ```
-  tf_ee_est = cmb_diagnostics.TransferFuncEE()
-  tf_ee_est.planck_fname = '/home/yl9946/projects/tp_leakage/planck_equatorial/planck_{}_equatorial_rm_mnp_dp.fits'
-  ```
-  The file name is generic, \{\} is where you distinguish frequencies (but you should specify frequncy in `tf_ee_est.planck_freqs`, add string formating 
-  info in \{\} as it fits.). You will also need the effective planck frequency for dust and put them in `tf_ee_est.planck_eff_freqs`
-- SO maps, in **carr** pixelization. Support the file name as follows
-  ```
-  tf_ee_est = cmb_diagnostics.TransferFuncEE()
-  tf_ee_est.so_fname = '/scratch/gpfs/sa5705/shared/SO_SAT/satp3_maps/cmb_maps_satp3_20240714/map_f{freq:03d}_muKcmb.fits'
-  ```
-- Beams for SO and planck. Assume gaussian beams, the values are stored as numpy array in `tf_ee_est.so_beams` and `tf_ee_est.planck_beams`.
-- Camb model, something like the 'nobb' template from BBPower(https://github.com/simonsobs/BBPower/blob/main/examples/data/camb_lens_nobb.dat). Supply the path at `tf_ee_est.camb_dl_path`.
+Pre-refactor README contents:
 
-## Inquiries
+- Supports: EE TF, TE TF, polarization angle from SO EB.
+- Requires: Planck equatorial HEALPix maps, SO CAR maps, Gaussian beam FWHMs, a CAMB reference `camb_lens_nobb.dat`.
+- Install: `git clone`, add parent of repo to `PYTHONPATH`.
+- Contacts / inquiries: see `main` branch.
+
+## Licence
+
+See `licence` at repo root.

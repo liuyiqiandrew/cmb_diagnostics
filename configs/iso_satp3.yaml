@@ -1,0 +1,58 @@
+schema_version: "1"
+
+output_dir: /scratch/gpfs/yl9946/cmb_diagnostics_runs/iso_satp3
+
+nside: 512
+
+bandpowers:
+  bin_width: 20
+  lmin: 30
+  lmax: 600
+  is_Dell: true
+
+mask:
+  kind: file
+  path: /scratch/gpfs/yl9946/iso_maps/mask/analysis_mask_satp3.fits
+  apodize: false                   # analysis mask is already apodized
+  threshold: 1.0e-5
+
+camb:
+  path: /scratch/gpfs/yl9946/basic_science/camb_lens_nobb.dat
+  format: bbpower_nobb
+
+dust:
+  beta: 1.6
+  Td_kelvin: 19.6
+  nu0_ghz: 353.0
+
+planck:
+  name: Planck
+  map_template: /home/yl9946/projects/tp_leakage/planck_equatorial/planck_{freq}_equatorial_rm_mnp_dp.fits
+  unit_scale: 1.0e6
+  pixelization: healpix_equatorial
+  purify_e: true
+  purify_b: true
+  bands:
+    - {freq: 100, beam_fwhm_arcmin: 9.66, eff_freq_cmb: 101.31,  eff_freq_dust: 105.25}
+    - {freq: 143, beam_fwhm_arcmin: 7.27, eff_freq_cmb: 142.71,  eff_freq_dust: 148.235}
+    - {freq: 217, beam_fwhm_arcmin: 5.01, eff_freq_cmb: 221.915, eff_freq_dust: 229.097}
+    - {freq: 353, beam_fwhm_arcmin: 4.86, eff_freq_cmb: 361.29,  eff_freq_dust: 372.193}
+
+so:
+  name: SO_SAT
+  map_template: /scratch/gpfs/yl9946/iso_maps/maps/satp3_f{freq:03d}_full_map.fits
+  unit_scale: 1.0e6
+  pixelization: car
+  purify_e: false
+  purify_b: false
+  bands:
+    - {freq:  90, beam_fwhm_arcmin: 27.4}
+    - {freq: 150, beam_fwhm_arcmin: 17.6}
+
+pol_angle:
+  lmin: 30
+  lmax_sweep: [200, 250, 300, 350, 400, 450, 500]
+
+advanced:
+  fisher_error_form: v1
+  write_diagnostic_plots: false
