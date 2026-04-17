@@ -80,12 +80,38 @@ Example configs in `configs/`:
 - `scipy`, `numpy`, `matplotlib`
 - `pygsm` — **the fork at `github.com/liuyiqiandrew/pygsm`**, not the PyPI package. Provides `trj2tcmb` and `planck_law`.
 
+### Install (Phase 2+)
+
+```
+pip install -e ".[dev]"
+pip install git+https://github.com/liuyiqiandrew/pygsm.git
+```
+
+The `pygsm` fork is a separate step because it isn't on PyPI and declaring a VCS
+dependency in `pyproject.toml` would break installs for anyone without git + SSH.
+
+### Contributor note: `PYTHONPATH` footgun
+
+During Phases 2–5 the new package lives at `src/cmb_diagnostics/` and is only
+reachable after `pip install -e ".[dev]"`. **Unset any `PYTHONPATH` entries pointing
+at this repo's parent directory** before installing — otherwise Python resolves
+`import cmb_diagnostics` to the legacy repo-root `__init__.py` (which re-exports the
+misspelled inner package `cmb_diagnoistics/`) and silently shadows the new code. The
+session-scoped `assert_new_package_on_sys_path` fixture in `tests/conftest.py` catches
+this and fails the suite with a clear message if it happens.
+
+### Notebooks
+
+See [`notebooks/`](notebooks/) for jupytext-format example scripts covering the
+one-call, step-through, and inline-dict calling patterns. Install notebook tooling
+with the `notebook` extra: `pip install -e ".[dev,notebook]"`.
+
 ## Refactor roadmap
 
 | Phase | Deliverable | Status |
 |---|---|---|
 | 1 | Design docs (`docs/`) + example configs + refactor README | **done** (this branch) |
-| 2 | Package scaffold + `pyproject.toml` + pytest fixtures (no functional code) | pending |
+| 2 | Package scaffold + `pyproject.toml` + pytest fixtures (no functional code) | **in progress** |
 | 3 | Port `io/`, `fields/`, `spectra/`, `models/` + regression tests against current outputs | pending |
 | 4 | Port estimators; implement `TransferFunctionTE` properly | pending |
 | 5 | Pipeline + CLI + reports; bit-identical output to current code on frozen inputs | pending |

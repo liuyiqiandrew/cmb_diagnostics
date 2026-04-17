@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cmb-diagnostics"
+version = "0.2.0.dev0"
+description = "Calibration diagnostics (transfer function, polarization angle) for Simons Observatory CMB maps from SO x Planck cross-spectra."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "licence" }
+authors = [
+    { name = "Yiqi Liu", email = "liuyiqiandrew@gmail.com" },
+]
+keywords = ["cmb", "cosmology", "simons-observatory", "planck", "calibration"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "healpy>=1.16",
+    "pixell>=0.24",
+    "pymaster>=2.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-cov", "ruff>=0.5"]
+test = ["pytest>=7", "pytest-cov"]
+notebook = ["jupyter", "ipykernel", "jupytext"]
+
+[project.scripts]
+cmb-diag = "cmb_diagnostics.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/liuyiqiandrew/cmb_diagnostics"
+Issues = "https://github.com/liuyiqiandrew/cmb_diagnostics/issues"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+packages = [
+    "cmb_diagnostics",
+    "cmb_diagnostics.io",
+    "cmb_diagnostics.fields",
+    "cmb_diagnostics.spectra",
+    "cmb_diagnostics.models",
+    "cmb_diagnostics.estimators",
+    "cmb_diagnostics.fitting",
+    "cmb_diagnostics.reports",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: requires real Planck/SO maps or heavy computation",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [
+    "cmb_diagnoistics",
+    "dev",
+    "test",
+    "result",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["B011"]
