@@ -118,7 +118,7 @@ def synthetic_mask(nside_small: int = 16) -> np.ndarray:
 def synthetic_camb_dat(tmp_path: Path) -> Path:
     path = tmp_path / "camb_lens_nobb.dat"
     lines = []
-    for ell in range(2, 101):
+    for ell in range(2, 4096):
         tt = 1000.0 / ell
         ee = 10.0 / ell
         bb = 0.0
@@ -126,6 +126,73 @@ def synthetic_camb_dat(tmp_path: Path) -> Path:
         lines.append(f"{ell} {tt:.4e} {ee:.4e} {bb:.4e} {te:.4e}")
     path.write_text("\n".join(lines))
     return path
+
+
+@pytest.fixture
+def phase3_config_yaml(tmp_path: Path, synthetic_camb_dat: Path) -> Path:
+    """Config valid enough to exercise Phase 3 (mask + bandpowers + CAMB)."""
+    path = tmp_path / "phase3.yaml"
+    path.write_text(
+        dedent(
+            f"""
+            schema_version: "1"
+            output_dir: {tmp_path / "out"}
+            nside: 16
+
+            bandpowers:
+              bin_width: 10
+              lmin: 5
+              lmax: 40
+              is_Dell: true
+
+            mask:
+              kind: boxes
+              apodize: false
+              threshold: 1.0e-5
+              boxes:
+                - [[-30, -20], [30, 20]]
+
+            camb:
+              path: {synthetic_camb_dat}
+              format: bbpower_nobb
+
+            dust:
+              beta: 1.6
+              Td_kelvin: 19.6
+              nu0_ghz: 353.0
+
+            planck:
+              name: Planck
+              map_template: /nonexistent/planck_{{freq}}.fits
+              unit_scale: 1.0e6
+              pixelization: healpix_equatorial
+              purify_e: true
+              purify_b: true
+              bands:
+                - {{freq: 143, beam_fwhm_arcmin: 7.27, eff_freq_cmb: 142.7, eff_freq_dust: 148.2}}
+
+            so:
+              name: SO_SAT
+              map_template: /nonexistent/so_f{{freq:03d}}.fits
+              unit_scale: 1.0e6
+              pixelization: car
+              purify_e: false
+              purify_b: false
+              bands:
+                - {{freq: 90, beam_fwhm_arcmin: 27.4}}
+
+            pol_angle:
+              lmin: 20
+              lmax_sweep: [30, 40]
+            """
+        ).strip()
+    )
+    return path
+
+
+@pytest.fixture
+def phase3_config(phase3_config_yaml: Path) -> Config:
+    return Config.from_yaml(phase3_config_yaml)
 
 
 @pytest.fixture

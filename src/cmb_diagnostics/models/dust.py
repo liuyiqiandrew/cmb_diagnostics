@@ -48,18 +48,38 @@ class MBBDustModel:
     nu0_ghz: float = 353.0
     band_info: BandInfoMap = field(default_factory=dict)
 
+    def _eff_dust_freq(self, t: Tracer, override: BandInfoMap | None) -> float:
+        source = override if override else self.band_info
+        info = source.get(t)
+        if info is None or info.eff_freq_dust is None:
+            raise KeyError(
+                f"MBBDustModel needs band_info[{t}].eff_freq_dust; provide one via "
+                "MBBDustModel(band_info=...) or pass band_info= to predict_cross."
+            )
+        return float(info.eff_freq_dust)
+
     def predict_cross(
         self, t1: Tracer, t2: Tracer, band_info: BandInfoMap | None = None
-    ) -> np.ndarray:
-        """Predict the MBB dust Cl shape for (t1, t2) at unit amplitude.
+    ) -> float:
+        """Scalar MBB factor for the (t1, t2) pair at unit amplitude.
 
-        Phase 3: port from ``cmb_diagnoistics/Models.py::amp_dust_mbb`` and
-        ``cmb_diagnoistics/diag_utils.py::dust_dl``.
+        Matches V1 ``Models.amp_dust_mbb`` with ``amp=1``: the product of the
+        power-law and modified-blackbody factors referenced to ``nu0``, scaled
+        by ``trj2tcmb(f1) * trj2tcmb(f2)``.
         """
-        raise NotImplementedError(
-            "Phase 3: port from cmb_diagnoistics/Models.py::amp_dust_mbb "
-            "(MBB shape at unit amplitude, using pygsm.trj2tcmb and planck_law)."
-        )
+        from pygsm import planck_law, trj2tcmb
+
+        f1 = self._eff_dust_freq(t1, band_info)
+        f2 = self._eff_dust_freq(t2, band_info)
+        nu0 = self.nu0_ghz
+        beta = self.beta
+        Td = self.Td_kelvin
+
+        r2c_f1 = trj2tcmb(f1)
+        r2c_f2 = trj2tcmb(f2)
+        mbb_pl = (f1 * f2 / nu0 ** 2) ** beta
+        mbb_bb = planck_law(Td, f1) * planck_law(Td, f2) / planck_law(Td, nu0) ** 2
+        return float(mbb_pl * mbb_bb * r2c_f1 * r2c_f2)
 
     def fit_amplitude(
         self,
@@ -69,11 +89,7 @@ class MBBDustModel:
         comp: Comp,
         ell_idx: int,
     ) -> FitAmplitude:
-        """Fit the dust amplitude at one bandpower across given tracer pairs.
-
-        Phase 4: port from inner loop of ``cmb_diagnoistics/Estimator.py::SOPlkTF.__tf_ee``
-        (dust amplitude stage).
-        """
+        """Phase 4: per-bin dust-amplitude fit (see ``SOPlkTF.__tf_ee``)."""
         raise NotImplementedError(
             "Phase 4: port dust-amplitude fit stage from "
             "cmb_diagnoistics/Estimator.py::SOPlkTF.__tf_ee."

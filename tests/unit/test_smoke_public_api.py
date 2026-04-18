@@ -1,5 +1,5 @@
-"""Smoke test: every public name in cmb_diagnostics.__all__ imports, and stubbed
-behavior raises NotImplementedError as documented.
+"""Smoke test: every public name in cmb_diagnostics.__all__ imports, and Phase 4
+behavior still raises NotImplementedError as documented.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ from cmb_diagnostics import (
     CMBReference,
     Config,
     FitResult,
-    MBBDustModel,
     Pipeline,
     PolarizationAngleEB,
     Tracer,
@@ -66,18 +65,9 @@ def test_pol_angle_raises():
         est.estimate()
 
 
-def test_pipeline_step_methods_raise(tiny_config: Config):
+def test_pipeline_phase4_methods_raise(tiny_config: Config):
+    """Phase 4 estimator methods are still stubs."""
     pipe = Pipeline(tiny_config)
-    assert pipe.mask is None
-    assert pipe.fieldsets == {}
-    assert pipe.spectra == {}
-    assert pipe.results == {}
-    with pytest.raises(NotImplementedError, match="Phase 3"):
-        pipe.load_mask()
-    with pytest.raises(NotImplementedError, match="Phase 3"):
-        pipe.build_fieldsets()
-    with pytest.raises(NotImplementedError, match="Phase 3"):
-        pipe.compute_spectra()
     with pytest.raises(NotImplementedError, match="Phase 4"):
         pipe.estimate_tf_ee(target=Tracer("SO_SAT", 90.0, 2))
     with pytest.raises(NotImplementedError, match="Phase 4"):
@@ -86,6 +76,14 @@ def test_pipeline_step_methods_raise(tiny_config: Config):
         pipe.estimate_pol_angle()
     with pytest.raises(NotImplementedError, match="Phase 5"):
         pipe.run()
+
+
+def test_pipeline_initial_state(tiny_config: Config):
+    pipe = Pipeline(tiny_config)
+    assert pipe.mask is None
+    assert pipe.fieldsets == {}
+    assert pipe.spectra == {}
+    assert pipe.results == {}
 
 
 def test_fitresult_repr_and_html():
@@ -100,12 +98,6 @@ def test_fitresult_repr_and_html():
     html = r._repr_html_()
     assert "<table>" in html
     assert "demo" in html
-
-
-def test_mbb_dust_predict_raises():
-    dust = MBBDustModel()
-    with pytest.raises(NotImplementedError, match="Phase 3"):
-        dust.predict_cross(Tracer("Planck", 100.0, 2), Tracer("Planck", 143.0, 2))
 
 
 def test_cmb_reference_get_real(bandpowers_factory):

@@ -1,14 +1,8 @@
 """End-to-end Pipeline with step-by-step API for interactive use.
 
-The Pipeline exposes both:
-- A monolithic ``run()`` for batch / CLI.
-- Per-step methods (``load_mask``, ``build_fieldsets``, ``compute_spectra``,
-  ``estimate_tf_ee``, ``estimate_tf_te``, ``estimate_pol_angle``) so notebook
-  users can inspect ``self.mask``, ``self.fieldsets``, ``self.spectra``, and
-  ``self.results`` at any point.
-
-All step methods raise ``NotImplementedError`` in Phase 2; Phase 4 and Phase 5
-fill the bodies.
+Phase 3 wires up mask loading, bandpowers, CAMB reference, field construction,
+and spectrum computation. Phase 4 will fill the estimator steps; Phase 5 will
+compose them into ``run()`` + reports.
 """
 
 from __future__ import annotations
@@ -17,12 +11,16 @@ from typing import TYPE_CHECKING
 
 from cmb_diagnostics._types import Tracer
 from cmb_diagnostics.estimators.base import FitResult
+from cmb_diagnostics.fields.builder import build_fieldset
+from cmb_diagnostics.io.camb import load_camb_reference
+from cmb_diagnostics.io.masks import load_mask
+from cmb_diagnostics.models.bandpowers import Bandpowers
+from cmb_diagnostics.spectra.compute import compute_spectra
 
 if TYPE_CHECKING:
     from cmb_diagnostics.config import Config
     from cmb_diagnostics.fields.container import FieldSet
     from cmb_diagnostics.io.masks import Mask
-    from cmb_diagnostics.models.bandpowers import Bandpowers
     from cmb_diagnostics.models.cmb import CMBReference
     from cmb_diagnostics.spectra.store import Spectra
 
@@ -30,8 +28,7 @@ if TYPE_CHECKING:
 class Pipeline:
     """Orchestrates a full SO-diagnostics run from a :class:`Config`.
 
-    Intermediate state is stored as attributes so notebook users can inspect
-    each step independently:
+    Step methods populate attributes so notebook users can inspect each stage:
 
     .. code-block:: python
 
@@ -52,26 +49,35 @@ class Pipeline:
         self.results: dict[str, FitResult] = {}
 
     def load_mask(self) -> Mask:
-        """Phase 3: load mask + build bandpowers + CAMB reference."""
-        raise NotImplementedError(
-            "Phase 3: call io.masks.load_mask(cfg.mask) -> self.mask; "
-            "Bandpowers.from_config(cfg.bandpowers, cfg.nside) -> self.bandpowers; "
-            "io.camb.load_camb_reference(cfg.camb, self.bandpowers) -> self.cmb_ref."
-        )
+        """Load mask, build bandpowers, parse CAMB reference. Populates
+        ``self.mask``, ``self.bandpowers``, ``self.cmb_ref``.
+        """
+        self.mask = load_mask(self.cfg.mask, self.cfg.nside)
+        self.bandpowers = Bandpowers.from_config(self.cfg.bandpowers, self.cfg.nside)
+        self.cmb_ref = load_camb_reference(self.cfg.camb, self.bandpowers, self.cfg.nside)
+        return self.mask
 
     def build_fieldsets(self) -> dict[str, FieldSet]:
-        """Phase 3: populate ``self.fieldsets`` for Planck and SO."""
-        raise NotImplementedError(
-            "Phase 3: for each of cfg.planck, cfg.so: "
-            "fields.build_fieldset(instrument_cfg, self.mask, cfg.nside)."
-        )
+        """Build Planck and SO ``FieldSet``s. Requires :meth:`load_mask` first."""
+        if self.mask is None:
+            raise RuntimeError("Pipeline.build_fieldsets: call load_mask() first")
+        self.fieldsets["planck"] = build_fieldset(self.cfg.planck, self.mask, self.cfg.nside)
+        self.fieldsets["so"] = build_fieldset(self.cfg.so, self.mask, self.cfg.nside)
+        return self.fieldsets
 
     def compute_spectra(self) -> dict[str, Spectra]:
-        """Phase 3: populate ``self.spectra`` with PP, PS, SS cross containers."""
-        raise NotImplementedError(
-            "Phase 3: call spectra.compute_spectra(fa, fb, bandpowers, "
-            "mask.fsky_effective) for all needed (fa, fb) pairs."
-        )
+        """Compute PP, PS, SS spectra + Knox variances. Requires fieldsets."""
+        if self.mask is None or self.bandpowers is None:
+            raise RuntimeError("Pipeline.compute_spectra: call load_mask() first")
+        if "planck" not in self.fieldsets or "so" not in self.fieldsets:
+            raise RuntimeError("Pipeline.compute_spectra: call build_fieldsets() first")
+        fa = self.fieldsets["planck"]
+        fb = self.fieldsets["so"]
+        fsky = self.mask.fsky_effective
+        self.spectra["pp"] = compute_spectra(fa, fa, self.bandpowers, fsky)
+        self.spectra["ps"] = compute_spectra(fa, fb, self.bandpowers, fsky)
+        self.spectra["ss"] = compute_spectra(fb, fb, self.bandpowers, fsky)
+        return self.spectra
 
     def estimate_tf_ee(self, target: Tracer) -> FitResult:
         """Phase 4: fit EE TF for ``target``."""

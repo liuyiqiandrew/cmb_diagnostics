@@ -4,22 +4,43 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import numpy as np
+
+from cmb_diagnostics.models.cmb import CMBReference
+
 if TYPE_CHECKING:
     from cmb_diagnostics.config import CambConfig
     from cmb_diagnostics.models.bandpowers import Bandpowers
-    from cmb_diagnostics.models.cmb import CMBReference
 
 
-def load_camb_reference(cfg: CambConfig, bandpowers: Bandpowers) -> CMBReference:
-    """Parse a BBPower-style ``camb_lens_nobb.dat`` into a binned ``CMBReference``.
+def load_camb_reference(
+    cfg: CambConfig,
+    bandpowers: Bandpowers,
+    nside: int,
+) -> CMBReference:
+    """Parse ``camb_lens_nobb.dat`` into a binned ``CMBReference``.
 
-    Phase 3: port from V1 ``PSContainer.init_camb_dl``. Format notes: text file
-    with rows ``[ell, TT, EE, BB, TE]`` in Dl starting at ell=2. Prepend one zero
-    row to shift indexing to ell=0, slice to ``3*nside``, call
-    ``bandpowers.nmt_bin.bin_cell(...)``, multiply by ``bandpowers.dl2cl`` to
-    convert Dl->Cl.
+    Format (BBPower-style): rows ``[ell, TT, EE, BB, TE]`` in Dl starting at
+    ell=2. Prepend one zero row to shift indexing to ell=0, slice to ``3*nside``,
+    ``nmt_bin.bin_cell`` to bandpowers, multiply by ``bandpowers.dl2cl`` to
+    convert Dl -> Cl. Ported from V1 ``PSContainer.init_camb_dl``.
     """
-    raise NotImplementedError(
-        "Phase 3: port from cmb_diagnoistics/PSContainer.py::PSContainer.init_camb_dl "
-        "(bbpower_nobb parse + zero-row prepend + nmt_bin.bin_cell + dl2cl conversion)."
+    if cfg.format != "bbpower_nobb":
+        raise ValueError(f"unsupported camb format: {cfg.format!r}")
+    if bandpowers.nmt_bin is None:
+        raise RuntimeError("load_camb_reference requires bandpowers.nmt_bin")
+
+    dl = np.loadtxt(cfg.path)
+    dl = np.concatenate([np.zeros((1, dl.shape[1]), dtype=dl.dtype), dl], axis=0)
+    lmax = nside * 3
+    dl2cl = bandpowers.dl2cl
+
+    ee = bandpowers.nmt_bin.bin_cell(dl[:lmax, 2]) * dl2cl
+    bb = bandpowers.nmt_bin.bin_cell(dl[:lmax, 3]) * dl2cl
+    te = bandpowers.nmt_bin.bin_cell(dl[:lmax, 4]) * dl2cl
+    tt = bandpowers.nmt_bin.bin_cell(dl[:lmax, 1]) * dl2cl
+
+    return CMBReference(
+        bandpowers=bandpowers,
+        cls_binned={"TT": tt, "EE": ee, "BB": bb, "TE": te},
     )

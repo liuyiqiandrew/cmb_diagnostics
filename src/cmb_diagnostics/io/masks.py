@@ -1,7 +1,8 @@
 """Mask dataclass + loaders.
 
-Mask itself is a real frozen dataclass (pure data, no computation). The loader
-and helper functions are stubs; Phase 3 ports them from diag_utils.py.
+Mask itself is a real frozen dataclass (pure data, no computation). Loaders
+port from V1 ``PSContainer.init_mask`` / ``init_mask_from_box`` and the helpers
+in ``diag_utils.py``.
 """
 
 from __future__ import annotations
@@ -22,44 +23,82 @@ class Mask:
     fsky_effective: float
 
 
-def load_mask(cfg: MaskConfig) -> Mask:
-    """Load a HEALPix mask according to ``cfg``.
+def load_mask(cfg: MaskConfig, nside: int) -> Mask:
+    """Build a HEALPix mask from a :class:`MaskConfig`.
 
-    Phase 3: dispatch on ``cfg.kind`` (``"file"`` or ``"boxes"``), apodize per
-    ``cfg.apodize``, apply ``cfg.threshold``, compute effective fsky. Source:
-    V1 ``PSContainer.init_mask`` / ``init_mask_from_box`` + ``diag_utils.box2hpmask``.
+    ``cfg.kind``:
+    - ``"file"``: read FITS mask from ``cfg.path``, optionally apodize.
+    - ``"boxes"``: OR together each ``[[dec_min, ra_min], [dec_max, ra_max]]``
+      rectangle from ``cfg.boxes`` (degrees), then optionally apodize.
+
+    ``cfg.threshold`` is applied to the *raw* (pre-apodization) mask to convert
+    to boolean. ``cfg.apodize=True`` runs the C2 apodization pipeline.
     """
-    raise NotImplementedError(
-        "Phase 3: port from cmb_diagnoistics/PSContainer.py::PSContainer.init_mask "
-        "and init_mask_from_box; see cmb_diagnoistics/diag_utils.py::box2hpmask."
-    )
+    import healpy as hp
+
+    if cfg.kind == "file":
+        if cfg.path is None:
+            raise ValueError("mask.kind='file' requires mask.path")
+        raw = hp.read_map(cfg.path)
+        raw = hp.ud_grade(raw, nside)
+        raw = raw > cfg.threshold
+    elif cfg.kind == "boxes":
+        if not cfg.boxes:
+            raise ValueError("mask.kind='boxes' requires a non-empty mask.boxes list")
+        raw = np.zeros(hp.nside2npix(nside), dtype=bool)
+        for box in cfg.boxes:
+            raw = raw | box2hpmask(nside, np.asarray(box, dtype=float))
+    else:
+        raise ValueError(f"unknown mask.kind: {cfg.kind!r}")
+
+    hp_map = apodize_square_mask(raw) if cfg.apodize else raw.astype(np.float64)
+    fsky = effective_fsky(hp_map)
+    return Mask(hp_map=np.asarray(hp_map, dtype=np.float64), nside=nside, fsky_effective=fsky)
 
 
-def box2hpmask(
-    nside: int, boxes: list[list[list[float]]]
-) -> np.ndarray:
-    """Build a HEALPix boolean mask from a list of [[dec_min, ra_min], [dec_max, ra_max]] boxes in degrees.
+def box2hpmask(nside: int, box: np.ndarray) -> np.ndarray:
+    """Build a boolean HEALPix mask covering one rectangle in (dec, ra) degrees.
 
-    Phase 3: port from ``cmb_diagnoistics/diag_utils.py::box2hpmask``.
+    ``box`` must be a 2x2 array: ``[[dec_min, ra_min], [dec_max, ra_max]]``.
+    Ported verbatim from ``cmb_diagnoistics/diag_utils.py::box2hpmask``.
     """
-    raise NotImplementedError(
-        "Phase 3: port from cmb_diagnoistics/diag_utils.py::box2hpmask."
-    )
+    import healpy as hp
+
+    box = np.asarray(box, dtype=float)
+    pix_ind = np.arange(hp.nside2npix(nside))
+    pix_ang = np.array(hp.pix2ang(nside, pix_ind, lonlat=True)) / 180 * np.pi
+    box_rad = box / 180 * np.pi
+    if box_rad[1, 1] < 0:
+        ra_cut = (pix_ang[0] > (2 * np.pi + box_rad[0, 1])) * (
+            pix_ang[0] < (2 * np.pi + box_rad[1, 1])
+        )
+    else:
+        ra_cut = (pix_ang[0] > box_rad[0, 1]) * (pix_ang[0] < box_rad[1, 1])
+    dec_cut = (pix_ang[1] > box_rad[0, 0]) * (pix_ang[1] < box_rad[1, 0])
+    return ra_cut * dec_cut
 
 
-def apodize_square_mask(mask: np.ndarray, nside: int) -> np.ndarray:
-    """Apply healpy smoothing + NaMaster C2 apodization to a boolean mask.
+def apodize_square_mask(mask: np.ndarray) -> np.ndarray:
+    """Smooth + C2-apodize a boolean HEALPix mask.
 
-    Phase 3: port from ``cmb_diagnoistics/diag_utils.py::apodize_square_mask``.
+    Ported verbatim from ``cmb_diagnoistics/diag_utils.py::apodize_square_mask``.
     """
-    raise NotImplementedError(
-        "Phase 3: port from cmb_diagnoistics/diag_utils.py::apodize_square_mask."
-    )
+    import healpy as hp
+    import pymaster as nmt
+
+    ZERO = 1e-4
+    nhg = hp.smoothing(mask.astype(np.float64), 4 / 180 * np.pi)
+    nhg[nhg < 0] = 0
+    nhg /= nhg.max()
+    tmp_mask = nhg > ZERO
+    return nmt.mask_apodization(tmp_mask.astype(np.float64), 10, "C2")
 
 
 def effective_fsky(mask: np.ndarray) -> float:
-    """Return the apodization-weighted effective fsky: sum(w^2) / Npix.
+    """Apodization-weighted effective sky fraction: ``sum(w^2) / Npix``.
 
-    Phase 3: thin helper, new to refactor (replaces V1's sum(w)/Npix).
+    Replaces V1's plain ``sum(w) / Npix``; the squared form is the conventional
+    effective fsky for Gaussian (Knox) covariance with an apodized mask.
     """
-    raise NotImplementedError("Phase 3: sum(mask**2) / mask.size.")
+    m = np.asarray(mask, dtype=np.float64)
+    return float((m ** 2).sum() / m.size)

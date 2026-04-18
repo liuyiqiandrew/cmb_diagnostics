@@ -20,15 +20,14 @@ def knox_variance(
     cl_ab: np.ndarray,
     bandpowers: Bandpowers,
     fsky_effective: float,
+    cl_ba: np.ndarray | None = None,
 ) -> np.ndarray:
     """Bandpower variance under Gaussian, disconnected-trispectrum approximation.
 
-    Phase 3: port from ``cmb_diagnoistics/diag_utils.py::knox_covar``.
-
-    Formula: ``Var(C_AB) = (C_AA * C_BB + C_AB**2) / ((2l+1) * fsky * dl)``
-    with ``l`` = effective bin center from ``bandpowers``.
+    ``Var(C_AB) = (C_AA * C_BB + C_AB * C_BA) / ((2l+1) * fsky * dl)``.
+    For symmetric components (EE, BB, TT, TE), ``cl_ba == cl_ab``; for EB / BE
+    pass ``cl_ba`` explicitly.
     """
-    raise NotImplementedError(
-        "Phase 3: port from cmb_diagnoistics/diag_utils.py::knox_covar "
-        "(formula given in docstring; uses bandpowers.effective_ell and bin_width)."
-    )
+    cl_ba_arr = cl_ab if cl_ba is None else cl_ba
+    ell = bandpowers.effective_ell
+    return (cl_aa * cl_bb + cl_ab * cl_ba_arr) / (2 * ell + 1) / fsky_effective / bandpowers.bin_width

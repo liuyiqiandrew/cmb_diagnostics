@@ -46,12 +46,19 @@ class Bandpowers:
 
     @classmethod
     def from_config(cls, cfg: BandpowersConfig, nside: int) -> Bandpowers:
-        """Construct a Bandpowers from config.
+        """Build a linearly-binned NmtBin + effective-ell cache.
 
-        Phase 3: import pymaster and build the NmtBin. Source: V1
-        ``PSContainer.init_nmt`` in ``cmb_diagnoistics/PSContainer.py``.
+        Mirrors V1 ``PSContainer.init_nmt``.
         """
-        raise NotImplementedError(
-            "Phase 3: port from cmb_diagnoistics/PSContainer.py::PSContainer.init_nmt "
-            "(build nmt.NmtBin.from_nside_linear, populate effective_ell)."
+        import pymaster as nmt
+
+        nmt_bin = nmt.NmtBin.from_nside_linear(nside, cfg.bin_width, is_Dell=cfg.is_Dell)
+        eff_ell = nmt_bin.get_effective_ells()
+        return cls(
+            nmt_bin=nmt_bin,
+            bin_width=cfg.bin_width,
+            lmin=cfg.lmin,
+            lmax=cfg.lmax,
+            is_dell=cfg.is_Dell,
+            _effective_ell=eff_ell,
         )

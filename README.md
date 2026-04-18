@@ -111,8 +111,8 @@ with the `notebook` extra: `pip install -e ".[dev,notebook]"`.
 | Phase | Deliverable | Status |
 |---|---|---|
 | 1 | Design docs (`docs/`) + example configs + refactor README | **done** (this branch) |
-| 2 | Package scaffold + `pyproject.toml` + pytest fixtures (no functional code) | **in progress** |
-| 3 | Port `io/`, `fields/`, `spectra/`, `models/` + regression tests against current outputs | pending |
+| 2 | Package scaffold + `pyproject.toml` + pytest fixtures (no functional code) | **done** |
+| 3 | Port `io/`, `fields/`, `spectra/`, `models/` + regression tests against current outputs | **done** |
 | 4 | Port estimators; implement `TransferFunctionTE` properly | pending |
 | 5 | Pipeline + CLI + reports; bit-identical output to current code on frozen inputs | pending |
 | 6 | Delete `cmb_diagnoistics/`, `dev/tf_calib.py`, tracked `__pycache__/`; rename package directory | pending |

@@ -6,11 +6,22 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from cmb_diagnostics._types import Tracer
 from cmb_diagnostics.fields.container import FieldSet
+from cmb_diagnostics.io.loaders import get_loader
 
 if TYPE_CHECKING:
     from cmb_diagnostics.config import InstrumentConfig
     from cmb_diagnostics.io.masks import Mask
+
+
+def _gauss_beam(fwhm_arcmin: float, nside: int) -> np.ndarray:
+    import healpy as hp
+
+    # V1 used `nside*3 - 1` for Planck, `nside*3` for SO in the test. Use the
+    # +0 form consistently (one extra ell costs nothing, and V2's
+    # `new_estimator_test.py` uses `nside*3` for both).
+    return hp.gauss_beam(fwhm_arcmin / 60 / 180 * np.pi, nside * 3)
 
 
 def build_spin0_field(
@@ -19,14 +30,11 @@ def build_spin0_field(
     beam_fwhm_arcmin: float,
     nside: int,
 ) -> Any:
-    """Phase 3: build an ``nmt.NmtField`` with spin=0.
+    """Spin-0 NaMaster field from a single-component temperature map."""
+    import pymaster as nmt
 
-    Source: V1 ``PSContainer.init_planck_f0``.
-    """
-    raise NotImplementedError(
-        "Phase 3: port from cmb_diagnoistics/PSContainer.py::PSContainer.init_planck_f0 "
-        "(hp.gauss_beam + nmt.NmtField with [T] and the apodized mask)."
-    )
+    beam = _gauss_beam(beam_fwhm_arcmin, nside)
+    return nmt.NmtField(mask.hp_map, [np.asarray(tmap)], beam=beam, spin=0)
 
 
 def build_spin2_field(
@@ -38,24 +46,39 @@ def build_spin2_field(
     purify_e: bool = False,
     purify_b: bool = False,
 ) -> Any:
-    """Phase 3: build an ``nmt.NmtField`` with spin=2.
+    """Spin-2 NaMaster field from Q/U maps."""
+    import pymaster as nmt
 
-    Source: V1 ``PSContainer.init_planck_f2`` / ``init_so_f2``.
-    """
-    raise NotImplementedError(
-        "Phase 3: port from cmb_diagnoistics/PSContainer.py::PSContainer.init_planck_f2 "
-        "(hp.gauss_beam + nmt.NmtField with [Q,U] + purify flags)."
+    beam = _gauss_beam(beam_fwhm_arcmin, nside)
+    return nmt.NmtField(
+        mask.hp_map,
+        [np.asarray(qmap), np.asarray(umap)],
+        beam=beam,
+        purify_e=purify_e,
+        purify_b=purify_b,
     )
 
 
 def build_fieldset(cfg: InstrumentConfig, mask: Mask, nside: int) -> FieldSet:
-    """Phase 3: build a ``FieldSet`` by loading maps + constructing NmtField
-    objects for each band in ``cfg.bands``.
-
-    Source: composition of V1 ``PSContainer.init_planck_f0``/``_f2`` /
-    ``init_so_f2``.
-    """
-    raise NotImplementedError(
-        "Phase 3: read maps via loaders.get_loader(cfg), call build_spin0_field "
-        "and build_spin2_field per band, return FieldSet(cfg.name)."
-    )
+    """Load I/Q/U per band, construct spin-0 and spin-2 NaMaster fields."""
+    loader = get_loader(cfg, nside)
+    fs = FieldSet(cfg.name)
+    for band in cfg.bands:
+        tqu = loader.load(Tracer(cfg.name, band.freq, spin=2))
+        if tqu.ndim != 2 or tqu.shape[0] < 3:
+            raise RuntimeError(
+                f"{cfg.name} loader returned shape {tqu.shape}; expected (3, npix)."
+            )
+        t0 = build_spin0_field(tqu[0], mask, band.beam_fwhm_arcmin, nside)
+        t2 = build_spin2_field(
+            tqu[1],
+            tqu[2],
+            mask,
+            band.beam_fwhm_arcmin,
+            nside,
+            purify_e=cfg.purify_e,
+            purify_b=cfg.purify_b,
+        )
+        fs.add(Tracer(cfg.name, band.freq, spin=0), t0)
+        fs.add(Tracer(cfg.name, band.freq, spin=2), t2)
+    return fs
