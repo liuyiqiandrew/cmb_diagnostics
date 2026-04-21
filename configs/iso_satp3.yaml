@@ -12,12 +12,13 @@ bandpowers:
 
 mask:
   kind: file
-  path: /scratch/gpfs/yl9946/iso_maps/mask/analysis_mask_satp3.fits
+  path: /scratch/gpfs/SIMONSOBS/users/yl9946/iso_maps/mask/analysis_mask_satp3.fits
+  pixelization: car                # analysis_mask_satp3.fits is stored in CAR — legacy test reads via read_carr2healpix
   apodize: false                   # analysis mask is already apodized
   threshold: 1.0e-5
 
 camb:
-  path: /scratch/gpfs/yl9946/basic_science/camb_lens_nobb.dat
+  path: /scratch/gpfs/SIMONSOBS/users/yl9946/basic_science/camb_lens_nobb.dat
   format: bbpower_nobb
 
 dust:
@@ -40,7 +41,7 @@ planck:
 
 so:
   name: SO_SAT
-  map_template: /scratch/gpfs/yl9946/iso_maps/maps/satp3_f{freq:03d}_full_map.fits
+  map_template: /scratch/gpfs/SIMONSOBS/users/yl9946/iso_maps/maps/satp3_f{freq:03d}_full_map.fits
   unit_scale: 1.0e6
   pixelization: car
   purify_e: false

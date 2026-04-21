@@ -2,7 +2,7 @@
 
 Derive calibration information (transfer functions, polarization angle) for Simons Observatory CMB maps from SO × Planck cross-spectra.
 
-> **Status:** this branch (`refactor`) carries the design docs for an in-flight rewrite. The working pre-refactor code lives on `main`; see [Legacy usage](#legacy-usage-pre-refactor) below if you need to reproduce pre-refactor results.
+> **Status:** this branch (`refactor`) carries the new layered package at `src/cmb_diagnostics/`. `cmb-diag run --config <file>` is functional end to end (writes `.npz` + `.png` under `cfg.output_dir`). Phase 6 will delete the legacy `cmb_diagnoistics/` package; until then the working pre-refactor code still lives on `main`. See [Legacy usage](#legacy-usage-pre-refactor) below if you need to reproduce pre-refactor results.
 
 ## Why this repo
 
@@ -112,9 +112,9 @@ with the `notebook` extra: `pip install -e ".[dev,notebook]"`.
 |---|---|---|
 | 1 | Design docs (`docs/`) + example configs + refactor README | **done** (this branch) |
 | 2 | Package scaffold + `pyproject.toml` + pytest fixtures (no functional code) | **done** |
-| 3 | Port `io/`, `fields/`, `spectra/`, `models/` + regression tests against current outputs | **done** |
-| 4 | Port estimators; implement `TransferFunctionTE` properly | pending |
-| 5 | Pipeline + CLI + reports; bit-identical output to current code on frozen inputs | pending |
+| 3 | Port `io/`, `fields/`, `spectra/`, `models/` + component unit tests | **done** |
+| 4 | Port estimators; implement `TransferFunctionTE` properly; add end-to-end regression test against `test/bf_tf.npy` / `ml_tf.npy` | **done** |
+| 5 | Pipeline + CLI + reports; `cmb-diag run` is functional end to end | **done** |
 | 6 | Delete `cmb_diagnoistics/`, `dev/tf_calib.py`, tracked `__pycache__/`; rename package directory | pending |
 
 ## Legacy usage (pre-refactor)

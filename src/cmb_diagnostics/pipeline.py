@@ -1,7 +1,7 @@
 """End-to-end Pipeline with step-by-step API for interactive use.
 
 Phase 3 wires up mask loading, bandpowers, CAMB reference, field construction,
-and spectrum computation. Phase 4 will fill the estimator steps; Phase 5 will
+and spectrum computation. Phase 4 fills the estimator steps; Phase 5 will
 compose them into ``run()`` + reports.
 """
 
@@ -9,12 +9,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cmb_diagnostics._types import Tracer
+from cmb_diagnostics._types import BandInfo, Tracer
 from cmb_diagnostics.estimators.base import FitResult
+from cmb_diagnostics.estimators.pol_angle import PolarizationAngleEB
+from cmb_diagnostics.estimators.transfer_function import (
+    TransferFunctionEE,
+    TransferFunctionTE,
+)
 from cmb_diagnostics.fields.builder import build_fieldset
 from cmb_diagnostics.io.camb import load_camb_reference
 from cmb_diagnostics.io.masks import load_mask
 from cmb_diagnostics.models.bandpowers import Bandpowers
+from cmb_diagnostics.models.dust import MBBDustModel
 from cmb_diagnostics.spectra.compute import compute_spectra
 
 if TYPE_CHECKING:
@@ -79,33 +85,146 @@ class Pipeline:
         self.spectra["ss"] = compute_spectra(fb, fb, self.bandpowers, fsky)
         return self.spectra
 
-    def estimate_tf_ee(self, target: Tracer) -> FitResult:
-        """Phase 4: fit EE TF for ``target``."""
-        raise NotImplementedError(
-            "Phase 4: TransferFunctionEE(self.spectra['pp'], self.spectra['ps'], "
-            "self.cmb_ref, dust).estimate(target=target)."
+    def _build_band_info_map(self) -> dict[Tracer, BandInfo]:
+        """Build the Tracer->BandInfo map consumed by :class:`MBBDustModel`.
+
+        Spin is set to 2 for both Planck and SO (dust amp fits use EE/BB/TE
+        on polarization tracers; T-side tracers reuse the same BandInfo since
+        ``eff_freq_dust`` is what ``MBBDustModel`` reads).
+
+        Missing ``eff_freq_cmb`` / ``eff_freq_dust`` fall back to the band's
+        nominal ``freq``. SO's wide tophat bands have no calibrated effective
+        frequencies; the band center is the honest default.
+        """
+        out: dict[Tracer, BandInfo] = {}
+        for inst in (self.cfg.planck, self.cfg.so):
+            for band in inst.bands:
+                eff_cmb = band.eff_freq_cmb if band.eff_freq_cmb is not None else band.freq
+                eff_dust = band.eff_freq_dust if band.eff_freq_dust is not None else band.freq
+                for spin in (0, 2):
+                    t = Tracer(inst.name, band.freq, spin=spin)
+                    out[t] = BandInfo(
+                        tracer=t,
+                        beam_fwhm_arcmin=band.beam_fwhm_arcmin,
+                        eff_freq_cmb=eff_cmb,
+                        eff_freq_dust=eff_dust,
+                    )
+        return out
+
+    def _ensure_spectra(self) -> None:
+        if self.mask is None:
+            raise RuntimeError("Pipeline: call load_mask() first")
+        missing = [k for k in ("pp", "ps", "ss") if k not in self.spectra]
+        if missing:
+            raise RuntimeError(
+                f"Pipeline: call compute_spectra() first (missing: {missing})"
+            )
+
+    def _build_dust(self) -> MBBDustModel:
+        return MBBDustModel(
+            beta=self.cfg.dust.beta,
+            Td_kelvin=self.cfg.dust.Td_kelvin,
+            nu0_ghz=self.cfg.dust.nu0_ghz,
+            band_info=self._build_band_info_map(),
         )
+
+    def estimate_tf_ee(self, target: Tracer) -> FitResult:
+        """Fit EE TF for ``target`` (typically an SO spin-2 Tracer)."""
+        self._ensure_spectra()
+        assert self.cmb_ref is not None  # _ensure_spectra implies load_mask ran
+        est = TransferFunctionEE(
+            spec_pp=self.spectra["pp"],
+            spec_ps=self.spectra["ps"],
+            cmb_ref=self.cmb_ref,
+            dust=self._build_dust(),
+        )
+        result = est.estimate(target=target)
+        self.results[result.name] = result
+        return result
 
     def estimate_tf_te(self, target: Tracer) -> FitResult:
-        """Phase 4: fit TE TF for ``target``."""
-        raise NotImplementedError(
-            "Phase 4: TransferFunctionTE(...).estimate(target=target)."
+        """Fit TE TF for ``target`` (typically an SO spin-2 Tracer)."""
+        self._ensure_spectra()
+        assert self.cmb_ref is not None
+        est = TransferFunctionTE(
+            spec_pp_tt=self.spectra["pp"],
+            spec_pp_te=self.spectra["pp"],
+            spec_ps_te=self.spectra["ps"],
+            cmb_ref=self.cmb_ref,
+            dust=self._build_dust(),
         )
+        result = est.estimate(target=target)
+        self.results[result.name] = result
+        return result
 
     def estimate_pol_angle(self) -> FitResult:
-        """Phase 4: fit SO polarization angle from EB."""
-        raise NotImplementedError(
-            "Phase 4: PolarizationAngleEB(self.spectra['ss'], "
-            "lmin=cfg.pol_angle.lmin, lmax_sweep=cfg.pol_angle.lmax_sweep).estimate()."
+        """Fit SO polarization angle from EB over the configured lmax sweep."""
+        self._ensure_spectra()
+        est = PolarizationAngleEB(
+            spec_ss=self.spectra["ss"],
+            lmin=self.cfg.pol_angle.lmin,
+            lmax_sweep=self.cfg.pol_angle.lmax_sweep,
         )
+        result = est.estimate()
+        self.results[result.name] = result
+        return result
 
     def run(self) -> dict[str, FitResult]:
-        """Phase 5: run the full pipeline end-to-end.
+        """Run the full pipeline end-to-end.
 
-        Composes the step methods above. Returns ``self.results``.
+        Composes ``load_mask -> build_fieldsets -> compute_spectra -> per-band
+        estimate_tf_ee / estimate_tf_te -> estimate_pol_angle``, writes
+        ``{name}.npz`` for each FitResult and three combined ``.png`` files
+        (``tf_ee.png``, ``tf_te.png``, ``pol_angle.png``) under
+        ``cfg.output_dir``. Returns ``self.results``.
+
+        If ``cfg.advanced.write_diagnostic_plots`` is truthy, emits a warning
+        that per-bin diagnostic plots are deferred to Phase 6.
         """
-        raise NotImplementedError(
-            "Phase 5: compose load_mask -> build_fieldsets -> compute_spectra -> "
-            "estimate_tf_ee (per SO band) -> estimate_tf_te (per SO band) -> "
-            "estimate_pol_angle; populate self.results with keyed FitResults."
-        )
+        import warnings
+        from pathlib import Path
+
+        import matplotlib
+
+        matplotlib.use("Agg")
+
+        from cmb_diagnostics.reports import pol_angle as _pa_reports
+        from cmb_diagnostics.reports import tf as _tf_reports
+
+        out_dir = Path(self.cfg.output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        self.load_mask()
+        self.build_fieldsets()
+        self.compute_spectra()
+
+        tf_ee_results: list[FitResult] = []
+        for band in self.cfg.so.bands:
+            target = Tracer(self.cfg.so.name, band.freq, spin=2)
+            r = self.estimate_tf_ee(target=target)
+            _tf_reports.save_npz(r, out_dir / f"{r.name}.npz")
+            tf_ee_results.append(r)
+        if tf_ee_results:
+            _tf_reports.plot(tf_ee_results, path=out_dir / "tf_ee.png")
+
+        tf_te_results: list[FitResult] = []
+        for band in self.cfg.so.bands:
+            target = Tracer(self.cfg.so.name, band.freq, spin=2)
+            r = self.estimate_tf_te(target=target)
+            _tf_reports.save_npz(r, out_dir / f"{r.name}.npz")
+            tf_te_results.append(r)
+        if tf_te_results:
+            _tf_reports.plot(tf_te_results, path=out_dir / "tf_te.png")
+
+        pa = self.estimate_pol_angle()
+        _pa_reports.save_npz(pa, out_dir / f"{pa.name}.npz")
+        _pa_reports.plot(pa, path=out_dir / "pol_angle.png")
+
+        if getattr(self.cfg.advanced, "write_diagnostic_plots", False):
+            warnings.warn(
+                "write_diagnostic_plots=True: per-bin diagnostic PNGs are deferred "
+                "to Phase 6; skipping.",
+                stacklevel=2,
+            )
+
+        return self.results

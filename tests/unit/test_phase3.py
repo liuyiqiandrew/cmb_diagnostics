@@ -67,6 +67,28 @@ def test_load_mask_rejects_unknown_kind():
         load_mask(cfg, nside=16)
 
 
+def test_load_mask_file_preserves_floats_when_apodize_false(tmp_path: Path):
+    """A pre-apodized float mask read from disk must not be binarized when ``apodize=false``."""
+    import healpy as hp
+
+    nside = 16
+    npix = hp.nside2npix(nside)
+    raw = np.zeros(npix, dtype=np.float64)
+    # Soft ramp across a few pixels to simulate apodization weights.
+    raw[10:40] = np.linspace(0.2, 1.0, 30)
+    path = tmp_path / "preapodized.fits"
+    hp.write_map(str(path), raw, overwrite=True)
+
+    cfg = MaskConfig(kind="file", path=str(path), apodize=False, threshold=1e-5)
+    mask = load_mask(cfg, nside=nside)
+
+    # Float weights must survive (not binarized), and intermediate values (0 < w < 1) must exist.
+    assert mask.hp_map.dtype == np.float64
+    assert np.any((mask.hp_map > 0) & (mask.hp_map < 1))
+    # effective_fsky for an apodized mask uses sum(w^2)/Npix, which is strictly less than sum(w)/Npix.
+    assert mask.fsky_effective < mask.hp_map.sum() / mask.hp_map.size
+
+
 def test_apodize_square_mask_returns_smooth_floats():
     import healpy as hp
 

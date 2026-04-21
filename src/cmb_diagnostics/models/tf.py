@@ -11,37 +11,29 @@ import numpy as np
 class TFAmplitudeModel:
     """Scalar scaling: predicts ``r * reference(l)``.
 
-    Phase 4: fill ``predict`` body. Source: ``cmb_diagnoistics/Models.py::tf_model``.
+    Ports ``cmb_diagnoistics/Models.py::tf_model``.
     """
 
     def predict(self, r: float, reference: np.ndarray) -> np.ndarray:
-        raise NotImplementedError(
-            "Phase 4: port from cmb_diagnoistics/Models.py::tf_model "
-            "(returns r * reference, trivial)."
-        )
+        return float(r) * np.asarray(reference)
 
 
 @dataclass
 class RotationModel:
     """(EE - BB) template fit for polarization-angle estimation.
 
-    Phase 4: fill ``predict``. Source: polarization-angle EB model in
-    ``cmb_diagnoistics/PolAngEstimator.py``.
+    Ports the template shape used in
+    ``cmb_diagnoistics/PolAngEstimator.py::PolAngEB.estimate_pol_ang``
+    (``EB = a * (EE - BB)``).
     """
 
     def predict(self, a: float, ee_minus_bb: np.ndarray) -> np.ndarray:
-        raise NotImplementedError(
-            "Phase 4: port EB = a * (EE - BB) predictor from "
-            "cmb_diagnoistics/PolAngEstimator.py."
-        )
+        return float(a) * np.asarray(ee_minus_bb)
 
 
 def rotation_from_amplitude(a: float) -> float:
-    """Closed-form: alpha = arctan(2a) / 4.
+    """Closed-form: ``alpha = arctan(2 a) / 4``.
 
-    Phase 4: direct port of ``cmb_diagnoistics/diag_utils.py::res2ang``.
+    Direct port of ``cmb_diagnoistics/diag_utils.py::res2ang``.
     """
-    raise NotImplementedError(
-        "Phase 4: port from cmb_diagnoistics/diag_utils.py::res2ang "
-        "(alpha = arctan(a * 2) / 4)."
-    )
+    return float(np.arctan(float(a) * 2) / 4)

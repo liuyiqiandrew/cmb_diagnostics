@@ -18,10 +18,11 @@ if TYPE_CHECKING:
 def _gauss_beam(fwhm_arcmin: float, nside: int) -> np.ndarray:
     import healpy as hp
 
-    # V1 used `nside*3 - 1` for Planck, `nside*3` for SO in the test. Use the
-    # +0 form consistently (one extra ell costs nothing, and V2's
-    # `new_estimator_test.py` uses `nside*3` for both).
-    return hp.gauss_beam(fwhm_arcmin / 60 / 180 * np.pi, nside * 3)
+    # pymaster 2.x's NmtField sets ainfo.lmax = 3*nside - 1 and requires the
+    # beam to have exactly lmax + 1 = 3*nside entries; a longer array triggers
+    # "Passing inconsistent arguments from python" from comp_coupling_matrix.
+    # hp.gauss_beam(fwhm, lmax) returns lmax + 1 entries.
+    return hp.gauss_beam(fwhm_arcmin / 60 / 180 * np.pi, 3 * nside - 1)
 
 
 def build_spin0_field(
@@ -53,6 +54,7 @@ def build_spin2_field(
     return nmt.NmtField(
         mask.hp_map,
         [np.asarray(qmap), np.asarray(umap)],
+        spin=2,
         beam=beam,
         purify_e=purify_e,
         purify_b=purify_b,

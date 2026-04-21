@@ -1,5 +1,5 @@
 from pygsm import trj2tcmb, planck_law
-
+import numpy as np
 
 def amp_dust_mbb(params, x, args):
     """
@@ -23,7 +23,22 @@ def amp_dust_mbb(params, x, args):
 
 def tf_model(param, x):
     """
-    param = (1/tf)
+    param = tf
     """
     tf_fac = param[0]
-    return 1/tf_fac * x
+    return tf_fac * x
+
+
+def rttf_error(pxp_est, dpxs):
+    """
+    Calculate the error on the transfer function
+    """
+    info = rttf_fisher(pxp_est, dpxs)
+    return 1 / np.sqrt(info)
+
+
+def rttf_fisher(pxp_est, dpxs):
+    """
+    Calculate the Fisher matrix for the transfer function
+    """
+    return (pxp_est**2 / dpxs**2).sum()

@@ -2,10 +2,10 @@ import scipy.optimize as opt
 import numpy as np
 from .Container import PSContainer
 from .Constants import PSType
-from .Models import amp_dust_mbb, tf_model
+from .Models import amp_dust_mbb, tf_model, rttf_error
 from .diag_utils import hess_inv
 import pymaster as nmt
-
+import matplotlib.pyplot as plt
 
 
 class Fitter:
@@ -111,6 +111,7 @@ class SOPlkTF:
             pxp_dust_specs.append((pxp - self.cmb_ee)[self.msk])
             dpxp_dust_specs.append(dpxp[self.msk])
         f1, f2, pxp_dust_specs, dpxp_dust_specs = np.array(f1), np.array(f2), np.array(pxp_dust_specs), np.array(dpxp_dust_specs)
+        ppf = (f1, f2)
 
         psf1, psf2, pxs_specs, dpxs_specs = [], [], [], []
         for pf in self.dust_eff_freq_lookup.keys():
@@ -126,16 +127,30 @@ class SOPlkTF:
         for i in range(self.msk.sum()):
             pxp = pxp_dust_specs[:, i]
             dpxp = pxp_dust_specs[:, i]
-            dfit = self.__est_dust_amp(f1, f2, pxp, dpxp)
+            msk_tmp = (pxp > 0) * (dpxp > 0)
+            dfit = self.__est_dust_amp(f1[msk_tmp], f2[msk_tmp], pxp[msk_tmp], dpxp[msk_tmp]**.5)
+            plt.figure()
+            plt.scatter(f1 * f2, dfit.eval(ppf))
+            plt.errorbar(f1 * f2, pxp, dpxp**.5, c='r', ls='', fmt='.')
+            plt.loglog()
+            plt.savefig(f'debug_dust_fit_{i}.png')
+            
             
             plk_ps_est = dfit.eval(psf) + self.cmb_ee[self.msk][i]
             pxs = pxs_specs[:, i] # get Plk x SO at the bin
             dpxs = dpxs_specs[:, i] # error for Plk x SO
-            tf_fitter = Fitter(tf_model, (1.), pxs, plk_ps_est, args=None, dy=dpxs)
+            tf_fitter = Fitter(tf_model, (1.), plk_ps_est, pxs, args=None, dy=dpxs**.5)
             self.tf[i] = tf_fitter.fit_result.x[0]**2
+
+            plt.figure()
+            plt.scatter(psf1 * psf2, plk_ps_est, label='orig plk est')
+            plt.scatter(psf1 * psf2, plk_ps_est * self.tf[i]**.5, label='orig plk est * tf')
+            plt.errorbar(psf1 * psf2, pxs, dpxs**.5, c='r', ls='', fmt='.', label='plk x so')
+            plt.loglog()
+            plt.savefig(f'debug_tf_fit_{i}.png')
             
-            tmp_var = hess_inv(plk_ps_est, dpxs)
-            self.dtf[i] = 4 * self.tf[i] * tmp_var
+            drttf = rttf_error(plk_ps_est, dpxs**.5)
+            self.dtf[i] = 2 * self.tf[i]**.5 * drttf
 
     def __est_dust_amp(self, f1, f2, pxp, dpxp):
         x_vals = (f1, f2)

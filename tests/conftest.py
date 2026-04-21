@@ -6,38 +6,52 @@ from collections.abc import Callable
 from pathlib import Path
 from textwrap import dedent
 
-import numpy as np
-import pytest
 
-import cmb_diagnostics
-from cmb_diagnostics._types import SpectrumKey, Tracer
-from cmb_diagnostics.config import Config
-from cmb_diagnostics.models.bandpowers import Bandpowers
+def _assert_new_package_resolves() -> None:
+    """Fail loudly at conftest-import time if ``cmb_diagnostics`` resolves to the legacy
+    repo-root package instead of ``src/cmb_diagnostics/``.
+
+    Uses ``importlib.util.find_spec`` so the (possibly legacy) package is *never*
+    imported during this check — a naive ``import cmb_diagnostics`` would execute
+    the legacy ``__init__.py`` (which in turn imports ``pixell``) and crash before
+    the guard can produce its clean message.
+    """
+    import importlib.util
+
+    expected = Path(__file__).resolve().parent.parent / "src" / "cmb_diagnostics" / "__init__.py"
+    spec = importlib.util.find_spec("cmb_diagnostics")
+    if spec is None or spec.origin is None:
+        raise RuntimeError(
+            f"cmb_diagnostics is not importable. Expected {expected}. "
+            "Install with `pip install -e \".[dev]\"` (and unset any PYTHONPATH pointing "
+            "at the repo's parent directory)."
+        )
+    resolved = Path(spec.origin).resolve()
+    if resolved != expected:
+        raise RuntimeError(
+            "cmb_diagnostics resolves to\n"
+            f"  {resolved}\n"
+            f"expected {expected}\n"
+            "Most likely your PYTHONPATH contains the repo's parent directory; unset it "
+            "and re-run `pip install -e \".[dev]\"` before testing."
+        )
+
+
+_assert_new_package_resolves()
+
+# Imports below must come after the guard so a polluted PYTHONPATH surfaces a clear
+# error message rather than a ModuleNotFoundError on submodules of the legacy package.
+import numpy as np  # noqa: E402
+import pytest  # noqa: E402
+
+from cmb_diagnostics._types import SpectrumKey, Tracer  # noqa: E402
+from cmb_diagnostics.config import Config  # noqa: E402
+from cmb_diagnostics.models.bandpowers import Bandpowers  # noqa: E402
 
 
 @pytest.fixture(scope="session")
 def repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
-
-
-@pytest.fixture(scope="session", autouse=True)
-def assert_new_package_on_sys_path(repo_root: Path) -> None:
-    """Guarantees tests exercise src/cmb_diagnostics, not the legacy repo-root package.
-
-    If a contributor has PYTHONPATH=<parent_of_repo>, Python resolves ``import
-    cmb_diagnostics`` to the legacy re-export and silently shadows the new code.
-    Fail the whole suite loudly instead of having tests pass against V1.
-    """
-    pkg_path = Path(cmb_diagnostics.__file__).resolve()
-    expected = repo_root / "src" / "cmb_diagnostics" / "__init__.py"
-    if pkg_path != expected:
-        raise RuntimeError(
-            "cmb_diagnostics resolves to\n"
-            f"  {pkg_path}\n"
-            f"expected {expected}\n"
-            "Most likely your PYTHONPATH contains the repo's parent directory; unset it "
-            "and re-run `pip install -e \".[dev]\"` before testing."
-        )
 
 
 @pytest.fixture

@@ -33,6 +33,7 @@ class BandpowersConfig:
 class MaskConfig:
     kind: str
     path: str | None = None
+    pixelization: str = "healpix"
     apodize: bool = True
     threshold: float = 1e-5
     boxes: list[list[list[float]]] | None = None

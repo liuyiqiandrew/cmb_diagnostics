@@ -83,10 +83,10 @@ def main():
     # sp_pp.save_container('sxp.json')
 
     e_l = plk_pp_calculator.eff_ell
-    msk = (e_l > 30) * (e_l < 300)
+    msk = (e_l > 30) * (e_l < 600)
 
     print("Start TF estimation")
-    TFEst = SOPlkTF(plk_pp, sp_pp, bins)
+    TFEst = SOPlkTF(plk_pp, sp_pp, bins, lmax=600)
     tf90 = TFEst.calc_tf(90)
     dtf90 = TFEst.dtf
     tf150 = TFEst.calc_tf(150)

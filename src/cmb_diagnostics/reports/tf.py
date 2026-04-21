@@ -14,52 +14,64 @@ if TYPE_CHECKING:
 
 
 def save_npz(result: FitResult, path: str | Path) -> None:
-    """Save a TF :class:`FitResult` to an npz.
-
-    Phase 5: thin wrapper over ``FitResult.save_npz``; may add provenance
-    metadata.
-    """
-    raise NotImplementedError(
-        "Phase 5: delegate to FitResult.save_npz + attach run provenance."
-    )
+    """Save a TF :class:`FitResult` to an npz via :meth:`FitResult.save_npz`."""
+    result.save_npz(path)
 
 
 def plot(
     results: Sequence[FitResult],
     path: str | Path | None = None,
     ax: Axes | None = None,
-    reference_tf: Path | None = None,
+    reference_tf: Any = None,
     **kwargs: Any,
 ) -> tuple[Figure, Axes]:
-    """Plot one or more TF results. Returns (fig, ax); writes to ``path`` if given.
+    """Plot one or more TF results as errorbars.
 
-    Phase 5: port from V1
-    ``TransferFuncEstimator.TransferFuncEE.plot_and_save_transfer_func`` and
-    ``test/tf_plotter.py`` (which loads bf_tf.npy + ml_tf.npy + reference_tf).
+    ``reference_tf`` (optional) is overlaid as a dashed black line. Pass either
+    ``(ell, tf)`` or an array of shape ``(2, n)``. Writes to ``path`` only if
+    given; always returns ``(fig, ax)``.
     """
-    raise NotImplementedError(
-        "Phase 5: port from cmb_diagnoistics/TransferFuncEstimator.py::"
-        "TransferFuncEE.plot_and_save_transfer_func and test/tf_plotter.py "
-        "(must return (fig, ax); save only when path is given)."
-    )
+    import matplotlib.pyplot as plt
+
+    if ax is None:
+        fig, ax = plt.subplots(dpi=kwargs.pop("dpi", 150))
+    else:
+        fig = ax.figure
+
+    for r in results:
+        label = str(r.metadata.get("target", r.name))
+        ax.errorbar(
+            r.ell, r.values, r.errors,
+            label=label, ls="", marker=".", alpha=0.5, capsize=3,
+        )
+
+    if reference_tf is not None:
+        ref = reference_tf
+        if hasattr(ref, "shape") and ref.ndim == 2 and ref.shape[0] == 2:
+            ref_ell, ref_val = ref[0], ref[1]
+        else:
+            ref_ell, ref_val = ref
+        ax.plot(ref_ell, ref_val, ls="--", c="k", label="reference")
+
+    ax.set_xlabel(r"$\ell$")
+    ax.set_ylabel("Transfer function")
+    ax.legend()
+    fig.tight_layout()
+
+    if path is not None:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(p)
+
+    return fig, ax
 
 
 def plot_diagnostics(
     result: FitResult,
     out_dir: str | Path,
 ) -> None:
-    """Write per-bin dust-fit / TF-fit diagnostic PNGs under ``out_dir``.
-
-    Opt-in only; called by CLI/Pipeline when
-    ``cfg.advanced.write_diagnostic_plots`` is true. Replaces the V2
-    side-effect writes of ``debug_dust_fit_*.png`` / ``debug_tf_fit_*.png``
-    to CWD.
-
-    Phase 5: port logic from ``cmb_diagnoistics/Estimator.py::SOPlkTF.__tf_ee``
-    per-bin debug plots.
-    """
+    """Per-bin dust-fit / TF-fit diagnostic PNGs. Deferred to Phase 6."""
     raise NotImplementedError(
-        "Phase 5: port per-bin debug plots from "
-        "cmb_diagnoistics/Estimator.py::SOPlkTF.__tf_ee "
-        "(write under out_dir, not CWD)."
+        "plot_diagnostics is deferred to Phase 6; see cmb_diagnoistics/"
+        "Estimator.py::SOPlkTF.__tf_ee for the reference implementation."
     )

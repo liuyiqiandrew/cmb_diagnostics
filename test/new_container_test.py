@@ -10,13 +10,20 @@ import matplotlib.pyplot as plt
 
 
 def main():
-    box1 = np.array(((-50,50),(-30,90))) * np.pi / 180 # clean CMB region south
-    box2 = np.array(((-20,-165),(0,-130))) * np.pi / 180 # clean CMB region east
-    mask1 = cmb_utils.maptools.carrbox2hpmask(512, box1)
-    ap_m1 = cmb_utils.maptools.apodize_square_mask(mask1)
-    mask2 = cmb_utils.maptools.carrbox2hpmask(512, box2)
-    ap_m2 = cmb_utils.maptools.apodize_square_mask(mask2)
-    mask = ap_m1 + ap_m2
+    # box1 = np.array(((-50,50),(-30,90))) * np.pi / 180 # clean CMB region south
+    # box2 = np.array(((-20,-165),(0,-130))) * np.pi / 180 # clean CMB region east
+    # mask1 = cmb_utils.maptools.carrbox2hpmask(512, box1)
+    # ap_m1 = cmb_utils.maptools.apodize_square_mask(mask1)
+    # mask2 = cmb_utils.maptools.carrbox2hpmask(512, box2)
+    # ap_m2 = cmb_utils.maptools.apodize_square_mask(mask2)
+    # mask = ap_m1 + ap_m2
+    # fsky = mask.sum() / hp.nside2npix(512)
+
+    mask = read_carr2healpix("/scratch/gpfs/yl9946/iso_maps/mask/analysis_mask_satp3.fits")
+    # mask = read_carr2healpix("/scratch/gpfs/yl9946/iso_maps/mask/apomask_ISO_f090.fits")
+    mask *= mask > 0.00001
+    mask = hp.ud_grade(mask, 512)
+    # mask_binary = mask > 0
     fsky = mask.sum() / hp.nside2npix(512)
 
 
@@ -38,12 +45,15 @@ def main():
     so_beam_fwhm = np.array([27.4, 17.6])
     so_beams = [hp.gauss_beam((fwhm / 60 / 180) * np.pi, 512 * 3) for fwhm in so_beam_fwhm]
     so_freqs = np.array([90, 150])
-    so_fnames = [f"/scratch/gpfs/sa5705/shared/SO_SAT/satp3_maps/cmb_maps_satp3_20240714/map_f{freq:03d}_muKcmb.fits" for freq in so_freqs]
+    # so_fnames = [f"/scratch/gpfs/sa5705/shared/SO_SAT/satp3_maps/cmb_maps_satp3_20240714/map_f{freq:03d}_muKcmb.fits" for freq in so_freqs]
+    so_fnames = [f"/scratch/gpfs/yl9946/iso_maps/maps/satp3_f{freq:03d}_full_map.fits" for freq in so_freqs] # FB
+
 
     so_field_container = cmb_diagnostics.Container.NmtFieldContainer("SO")
     print("Create SO Field")
     for idx, fname in enumerate(so_fnames):
-        so_map = read_carr2healpix(fname)
+        so_map = read_carr2healpix(fname) * 1e6
+        so_map = hp.ud_grade(so_map, 512)
         f0 = nmt.NmtField(mask, so_map[:1], beam=so_beams[idx])
         f2 = nmt.NmtField(mask, so_map[1:], beam=so_beams[idx])
         so_field_container.add_spin0_field(so_freqs[idx], f0)
@@ -67,22 +77,36 @@ def main():
     sp_pp = sp_pp_calculator.pp_container
 
     e_l = plk_pp_calculator.eff_ell
-    msk = (e_l > 30) * (e_l < 300)
+    msk = (e_l > 30) * (e_l < 600)
+
+    camb_cmb = np.loadtxt("/scratch/gpfs/yl9946/basic_science/camb_lens_nobb.dat")
+    camb_cmb = np.concatenate([np.zeros(5, dtype=np.float64)[None, :], camb_cmb], axis=0)
 
     print("Plot figure")
     plt.figure()
     for f1, f2 in itertools.combinations(planck_freqs, 2):
-        dl = plk_pp.get_spectrum('EE', f1, f2)
-        plt.loglog(e_l[msk], dl[msk], label=f"{f1}x{f2}")
+        dl, ddl = plk_pp.get_spectrum('EE', f1, f2, True)
+        plt.errorbar(e_l[msk], dl[msk], ddl[msk]**.5, label=f"{f1}x{f2}", capsize=3, alpha=.4)
+        print(f1, f2)
+        print(dl[msk])
+        print(ddl[msk]**.5)
+    plt.plot(camb_cmb[30:600, 0], camb_cmb[30:600, 2], c='k', ls='--', label='CAMB EE')
+    plt.loglog()
+    
     plt.legend()
-    plt.savefig('test_planck_auto.png')
+    plt.savefig('test_planck_auto_bf.png')
     
     plt.figure()
-    for f1, f2 in itertools.product(so_freqs, planck_freqs):
-        dl = sp_pp.get_spectrum('EE', f1, f2)
-        plt.loglog(e_l[msk], dl[msk], label=f"{f1}x{f2}")
+    for f1, f2 in itertools.product(planck_freqs, so_freqs):
+        dl, ddl = sp_pp.get_spectrum('EE', f1, f2, True)
+        plt.errorbar(e_l[msk], dl[msk], ddl[msk]**.5,label=f"{f1}x{f2}", capsize=3, alpha=.4)
+        print(f1, f2)
+        print(dl[msk])
+        print(ddl[msk]**.5)
+    plt.plot(camb_cmb[30:600, 0], camb_cmb[30:600, 2], c='k', ls='--', label='CAMB EE')
+    plt.loglog()
     plt.legend()
-    plt.savefig("test_sxp.png")
+    plt.savefig("test_sxp_bf.png")
 
 
 

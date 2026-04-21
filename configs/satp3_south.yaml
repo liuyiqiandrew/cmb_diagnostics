@@ -18,7 +18,7 @@ mask:
     - [[-20, -165], [0, -130]]     # clean CMB region, east
 
 camb:
-  path: /scratch/gpfs/yl9946/basic_science/camb_lens_nobb.dat
+  path: /scratch/gpfs/SIMONSOBS/users/yl9946/basic_science/camb_lens_nobb.dat
   format: bbpower_nobb
 
 dust:
@@ -42,6 +42,8 @@ planck:
 so:
   name: SO_SAT
   map_template: /scratch/gpfs/sa5705/shared/SO_SAT/satp3_maps/cmb_maps_satp3_20240714/map_f{freq:03d}_muKcmb.fits
+  # These maps are stored in K despite the _muKcmb suffix (matches current
+  # Della pipeline convention). Change to 1.0 if your SO maps are actually in μK.
   unit_scale: 1.0e6
   pixelization: car
   purify_e: false

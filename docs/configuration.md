@@ -20,9 +20,10 @@ bandpowers:
 mask:
   kind: file                        # "file" | "boxes"
   # --- if kind: file ---
-  path: /path/to/mask.fits          # CAR or HEALPix (auto-detected by extension/content)
-  apodize: true                     # if true, apply the same apodize_square_mask pipeline
-  threshold: 1.0e-5                 # zero-out pixels below this weight
+  path: /path/to/mask.fits
+  pixelization: healpix             # "healpix" | "car" (explicit, no auto-detection)
+  apodize: true                     # if true, binarize + run apodize_square_mask; if false, keep floats
+  threshold: 1.0e-5                 # pixels below this are zeroed (float) or treated as False (bool)
   # --- if kind: boxes ---
   # boxes:
   #   - [[-50, 50], [-30, 90]]       # [[dec_min, ra_min], [dec_max, ra_max]] in degrees
@@ -89,9 +90,10 @@ advanced:
 
 Two forms. Use `kind: file` for production (analysis masks, survey masks). Use `kind: boxes` to build a rectangular RA/Dec mask on the fly (convenient for clean-patch studies).
 
-- `path`: HEALPix FITS (read via `healpy.read_map`) or CAR FITS (read via `pixell.enmap.read_fits` and reprojected via `reproject.map2healpix`). Auto-detected by first opening the file.
-- `apodize`: whether to run the mask through `apodize_square_mask` (healpy smoothing + NaMaster `mask_apodization` C2 at 10°). For analysis masks that are already apodized, set `false`.
-- `threshold`: pixels with weight below this are zeroed. Matches the `mask *= mask > 1e-5` idiom in `test/new_container_test.py`.
+- `path`: path to the mask FITS file.
+- `pixelization`: `"healpix"` (read via `healpy.read_map`) or `"car"` (read via `pixell.enmap.read_fits` + `reproject.map2healpix`). No auto-detection — set it explicitly. Defaults to `"healpix"`.
+- `apodize`: whether to run the mask through `apodize_square_mask` (healpy smoothing + NaMaster `mask_apodization` C2 at 10°). When `true` the mask is binarized by `threshold` first. When `false` (analysis masks that are already apodized) the float weights are preserved; pixels below `threshold` are zeroed in place.
+- `threshold`: pixels with weight below this are zeroed (`apodize=false`) or treated as `False` before apodization (`apodize=true`). Matches the `mask *= mask > 1e-5` idiom in `test/new_container_test.py`.
 - `boxes`: list of `[[dec_min, ra_min], [dec_max, ra_max]]` in degrees. Internally converted to radians. Union of boxes is used.
 
 ### `camb`
@@ -107,7 +109,7 @@ Two forms. Use `kind: file` for production (analysis masks, survey masks). Use `
 
 - `name`: used as `Tracer.instrument`. Must be unique across instruments in one config.
 - `map_template`: Python `.format()` string with `{freq}` (or `{freq:03d}`) token. Loader substitutes the band's `freq`.
-- `unit_scale`: multiplied into raw map after read. 1e6 for typical Planck/SO maps (K → μK).
+- `unit_scale`: multiplied into raw map after read. Defaults assume K storage (1e6 for K → μK). All downstream code expects μK. If your maps are already in μK (e.g. filenames with a `_muKcmb` suffix produced by a newer pipeline), set `unit_scale: 1.0`. Most current Planck/SO map products on Della are stored in K — keep 1e6 unless you know your specific map is μK.
 - `pixelization`: `healpix_equatorial` (read via `healpy.read_map`) or `car` (read via pixell, reprojected to HEALPix). Other values raise at load time.
 - `purify_e`, `purify_b`: passed to `nmt.NmtField` on spin-2 construction. Recommended `true` for Planck, `false` for SO in current practice; the config exposes both.
 - `bands`: list of `{freq, beam_fwhm_arcmin, eff_freq_cmb, eff_freq_dust}`. `eff_freq_*` may be omitted if the band is not used in any estimator that requires it (e.g. `eff_freq_cmb` is optional in current estimators; `eff_freq_dust` is required for MBB dust fits at that band).

@@ -75,12 +75,14 @@ class FitResult:
     ) -> tuple[Figure, Axes]:
         """Plot the fit result.
 
-        Phase 5: implement. Returns ``(fig, ax)``; does not write to disk.
+        Dispatches on ``values.ndim``: 1-D → TF-style errorbars; 2-D →
+        pol-angle sweep. Returns ``(fig, ax)``; never writes to disk.
         """
-        raise NotImplementedError(
-            "Phase 5: port plotting from cmb_diagnoistics/TransferFuncEstimator.py::"
-            "TransferFuncEE.plot_and_save_transfer_func (return fig/ax, no save)."
-        )
+        if self.values.ndim == 2:
+            from cmb_diagnostics.reports import pol_angle as _pa
+            return _pa.plot(self, ax=ax, **kwargs)
+        from cmb_diagnostics.reports import tf as _tf
+        return _tf.plot([self], ax=ax, **kwargs)
 
 
 @runtime_checkable

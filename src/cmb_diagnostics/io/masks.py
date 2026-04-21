@@ -27,21 +27,34 @@ def load_mask(cfg: MaskConfig, nside: int) -> Mask:
     """Build a HEALPix mask from a :class:`MaskConfig`.
 
     ``cfg.kind``:
-    - ``"file"``: read FITS mask from ``cfg.path``, optionally apodize.
+    - ``"file"``: read FITS mask from ``cfg.path``. Dispatch on
+      ``cfg.pixelization`` (``"healpix"`` via ``healpy.read_map`` or ``"car"``
+      via ``pixell`` + ``reproject.map2healpix``).
     - ``"boxes"``: OR together each ``[[dec_min, ra_min], [dec_max, ra_max]]``
-      rectangle from ``cfg.boxes`` (degrees), then optionally apodize.
+      rectangle from ``cfg.boxes`` (degrees).
 
-    ``cfg.threshold`` is applied to the *raw* (pre-apodization) mask to convert
-    to boolean. ``cfg.apodize=True`` runs the C2 apodization pipeline.
+    Float vs boolean behavior:
+    - ``apodize=True``: raw mask is binarized via ``raw > threshold``, then fed
+      through the C2 apodization pipeline. Use for boolean input masks.
+    - ``apodize=False``: raw mask is kept as floats, with weights below
+      ``threshold`` zeroed in place. Use for pre-apodized analysis masks —
+      binarizing would destroy the apodization weights.
     """
     import healpy as hp
 
     if cfg.kind == "file":
         if cfg.path is None:
             raise ValueError("mask.kind='file' requires mask.path")
-        raw = hp.read_map(cfg.path)
-        raw = hp.ud_grade(raw, nside)
-        raw = raw > cfg.threshold
+        if cfg.pixelization == "healpix":
+            raw = hp.read_map(cfg.path)
+        elif cfg.pixelization == "car":
+            from pixell import enmap, reproject
+
+            car = enmap.read_fits(cfg.path)
+            raw = reproject.map2healpix(car, method="spline", order=1)
+        else:
+            raise ValueError(f"unknown mask.pixelization: {cfg.pixelization!r}")
+        raw = np.asarray(hp.ud_grade(raw, nside), dtype=np.float64)
     elif cfg.kind == "boxes":
         if not cfg.boxes:
             raise ValueError("mask.kind='boxes' requires a non-empty mask.boxes list")
@@ -51,7 +64,15 @@ def load_mask(cfg: MaskConfig, nside: int) -> Mask:
     else:
         raise ValueError(f"unknown mask.kind: {cfg.kind!r}")
 
-    hp_map = apodize_square_mask(raw) if cfg.apodize else raw.astype(np.float64)
+    if cfg.apodize:
+        # Apodization pipeline takes a boolean mask and produces smooth floats.
+        bool_raw = raw > cfg.threshold if raw.dtype != bool else raw
+        hp_map = apodize_square_mask(bool_raw)
+    else:
+        # Preserve float weights; zero out sub-threshold pixels in place.
+        floats = raw.astype(np.float64, copy=True)
+        floats[floats < cfg.threshold] = 0.0
+        hp_map = floats
     fsky = effective_fsky(hp_map)
     return Mask(hp_map=np.asarray(hp_map, dtype=np.float64), nside=nside, fsky_effective=fsky)
 
