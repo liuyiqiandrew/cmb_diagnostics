@@ -59,6 +59,8 @@ class FitResult:
         return f"FitResult(name={self.name!r}, nbins={n}, median={med:.3g}\u00b1{err:.2g})"
 
     def _repr_html_(self) -> str:
+        if self.values.ndim == 2:
+            return self._repr_html_2d()
         rows = [
             f"<tr><td>{ell:g}</td><td>{v:.4g}</td><td>{e:.3g}</td></tr>"
             for ell, v, e in zip(self.ell, self.values, self.errors, strict=True)
@@ -68,6 +70,27 @@ class FitResult:
             "</caption>"
             "<thead><tr><th>ell</th><th>value</th><th>error</th></tr></thead>"
             f"<tbody>{''.join(rows)}</tbody></table>"
+        )
+
+    def _repr_html_2d(self) -> str:
+        pair_labels = self.diagnostics.get("so_pairs")
+        n_rows = self.values.shape[0]
+        if pair_labels is not None and len(pair_labels) == n_rows:
+            row_names = [f"{int(p[0])}x{int(p[1])}" for p in pair_labels]
+        else:
+            row_names = [str(i) for i in range(n_rows)]
+        cells = []
+        for i, name in enumerate(row_names):
+            for j, ell in enumerate(self.ell):
+                cells.append(
+                    f"<tr><td>{name}</td><td>{ell:g}</td>"
+                    f"<td>{self.values[i, j]:.4g}</td><td>{self.errors[i, j]:.3g}</td></tr>"
+                )
+        return (
+            f"<table><caption><b>FitResult</b>: {self.name} "
+            f"(shape={self.values.shape})</caption>"
+            "<thead><tr><th>pair</th><th>ell_cap</th><th>value</th><th>error</th></tr></thead>"
+            f"<tbody>{''.join(cells)}</tbody></table>"
         )
 
     def plot(

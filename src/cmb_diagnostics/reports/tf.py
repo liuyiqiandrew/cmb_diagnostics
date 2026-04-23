@@ -69,9 +69,42 @@ def plot(
 def plot_diagnostics(
     result: FitResult,
     out_dir: str | Path,
-) -> None:
-    """Per-bin dust-fit / TF-fit diagnostic PNGs. Deferred to Phase 6."""
-    raise NotImplementedError(
-        "plot_diagnostics is deferred to Phase 6; see cmb_diagnoistics/"
-        "Estimator.py::SOPlkTF.__tf_ee for the reference implementation."
+) -> Path | None:
+    """Per-bin TF diagnostic plot: r, dust amplitude, and fit chi2 vs ell.
+
+    Replaces the legacy per-bin ``debug_dust_fit_*.png`` / ``debug_tf_fit_*.png``
+    dumps to CWD. Writes ``{out_dir}/{result.name}_diagnostics.png`` and returns
+    the path. Returns ``None`` if the result carries no diagnostics.
+    """
+    import matplotlib.pyplot as plt
+
+    diag = result.diagnostics
+    if not diag:
+        return None
+
+    keys = [k for k in ("r", "dust_amp", "chi2_tf") if k in diag]
+    if not keys:
+        return None
+
+    out_dir_p = Path(out_dir)
+    out_dir_p.mkdir(parents=True, exist_ok=True)
+
+    fig, axes = plt.subplots(
+        len(keys), 1, figsize=(6, 2.5 * len(keys)), dpi=150, sharex=True,
     )
+    if len(keys) == 1:
+        axes = [axes]
+
+    ylabels = {"r": r"$r = \sqrt{\mathrm{TF}}$", "dust_amp": "dust amplitude", "chi2_tf": r"$\chi^2$ (TF fit)"}
+    for ax, k in zip(axes, keys, strict=True):
+        ax.plot(result.ell, diag[k], marker=".", ls="-", alpha=0.7)
+        ax.set_ylabel(ylabels.get(k, k))
+        ax.grid(alpha=0.3)
+    axes[-1].set_xlabel(r"$\ell$")
+    fig.suptitle(result.name)
+    fig.tight_layout()
+
+    path = out_dir_p / f"{result.name}_diagnostics.png"
+    fig.savefig(path)
+    plt.close(fig)
+    return path

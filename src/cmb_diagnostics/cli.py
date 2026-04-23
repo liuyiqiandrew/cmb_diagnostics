@@ -45,6 +45,16 @@ def _save_pol_angle(result: FitResult, out_dir: Path) -> None:
     pa_reports.save_npz(result, out_dir / f"{result.name}.npz")
 
 
+def _maybe_write_diagnostics(
+    results: list[FitResult], cfg: Config, out_dir: Path
+) -> None:
+    if not getattr(cfg.advanced, "write_diagnostic_plots", False):
+        return
+    diag_dir = out_dir / "diagnostics"
+    for r in results:
+        tf_reports.plot_diagnostics(r, diag_dir)
+
+
 def cmd_tf_ee(args: argparse.Namespace) -> int:
     cfg = Config.from_yaml(args.config)
     out_dir = _ensure_output_dir(cfg)
@@ -58,6 +68,7 @@ def cmd_tf_ee(args: argparse.Namespace) -> int:
         result = pipe.estimate_tf_ee(target=target)
         _save_tf(result, out_dir)
         results.append(result)
+    _maybe_write_diagnostics(results, cfg, out_dir)
     tf_reports.plot(results, path=out_dir / "tf_ee.png")
     return 0
 
@@ -75,6 +86,7 @@ def cmd_tf_te(args: argparse.Namespace) -> int:
         result = pipe.estimate_tf_te(target=target)
         _save_tf(result, out_dir)
         results.append(result)
+    _maybe_write_diagnostics(results, cfg, out_dir)
     tf_reports.plot(results, path=out_dir / "tf_te.png")
     return 0
 

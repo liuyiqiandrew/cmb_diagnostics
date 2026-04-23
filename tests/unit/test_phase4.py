@@ -221,6 +221,46 @@ def test_transfer_function_ee_recovers_injected_tf():
     assert abs(result.diagnostics["r"].mean() - r_true) < 0.05
 
 
+def test_tf_ee_nan_dust_propagates_nan_not_one():
+    """A NaN-returning dust model must yield NaN TF bins, not the optimizer's r=1 guess."""
+    pytest.importorskip("pygsm")
+
+    from cmb_diagnostics.models.dust import FitAmplitude
+
+    class _NanDust:
+        def predict_cross(self, t1, t2, band_info=None):
+            return 1.0
+
+        def fit_amplitude(self, spectra, cmb_ref, tracer_pairs, comp,
+                          ell_idx, positive_only=None):
+            return FitAmplitude(
+                value=float("nan"), error=float("nan"), chi2=float("nan")
+            )
+
+    bp = _bandpowers_small()
+    plk = _planck_tracers()
+    so = _so_tracers()
+    real_dust = MBBDustModel(band_info=_band_info(plk + so))
+    cmb_ref = CMBReference(
+        bandpowers=bp, cls_binned={"EE": np.full(bp.effective_ell.size, 0.5)}
+    )
+
+    rng = np.random.default_rng(0)
+    spec_pp = Spectra(bandpowers=bp)
+    _inject_pp_ee(spec_pp, real_dust, cmb_ref, plk, a_true=2.0, rng=rng)
+    spec_ps = Spectra(bandpowers=bp)
+    _inject_ps_ee(spec_ps, real_dust, cmb_ref, plk, so,
+                  a_true=2.0, r_true=0.8, rng=rng)
+
+    est = TransferFunctionEE(
+        spec_pp=spec_pp, spec_ps=spec_ps, cmb_ref=cmb_ref, dust=_NanDust(),
+    )
+    result = est.estimate(target=Tracer("SO_SAT", 90.0, spin=2))
+
+    assert np.all(np.isnan(result.values)), result.values
+    assert np.all(np.isnan(result.errors))
+
+
 # ---- T5. TransferFunctionTE synthetic ----
 
 
@@ -278,6 +318,41 @@ def test_transfer_function_te_recovers_injected_tf():
     assert np.all(np.abs(result.values - r_true ** 2) < 3 * result.errors + 0.05)
 
 
+def test_tf_te_respects_bandpowers_lmin():
+    """TransferFunctionTE must not dip below bp.lmin even when its own lmin is looser."""
+    pytest.importorskip("pygsm")
+
+    # bp.lmin=100 is stricter than TE default lmin=50.
+    bp = _bandpowers_small(nbins=15, bin_width=20, lmin=100, lmax=400)
+    plk_t = _planck_t_tracers()
+    plk_e = _planck_tracers()
+    so = _so_tracers()
+    band_info = _band_info(plk_e + so)
+    band_info.update(_band_info(plk_t))
+    dust = MBBDustModel(band_info=band_info)
+    cmb_ref = CMBReference(
+        bandpowers=bp, cls_binned={"TE": np.full(bp.effective_ell.size, 0.5)}
+    )
+
+    rng = np.random.default_rng(1)
+    spec_pp = Spectra(bandpowers=bp)
+    _inject_pp_te(spec_pp, dust, cmb_ref, plk_t, plk_e, a_true=1.5, rng=rng)
+    spec_ps = Spectra(bandpowers=bp)
+    _inject_ps_te(spec_ps, dust, cmb_ref, plk_t, so,
+                  a_true=1.5, r_true=0.9, rng=rng)
+
+    est = TransferFunctionTE(
+        spec_pp_tt=spec_pp, spec_pp_te=spec_pp, spec_ps_te=spec_ps,
+        cmb_ref=cmb_ref, dust=dust, lmin=50,  # intentionally looser than bp.lmin
+    )
+    result = est.estimate(target=Tracer("SO_SAT", 90.0, spin=2))
+
+    assert result.ell.size > 0
+    assert result.ell.min() > 100, (
+        f"TE used bin at ell={result.ell.min()} below bp.lmin=100"
+    )
+
+
 # ---- T6. PolarizationAngleEB synthetic ----
 
 
@@ -307,6 +382,33 @@ def test_polarization_angle_eb_recovers_injected_angle():
     assert result.values.shape == (3, 3)  # 3 pairs, 3 caps
     # Recover alpha_true within a few sigma on each (pair, cap).
     assert np.all(np.abs(result.values - alpha_true) < 5 * result.errors + 1e-4)
+
+    # 2-D HTML repr must not raise (bug 4 regression).
+    html = result._repr_html_()
+    assert "<table" in html and "</table>" in html
+
+
+def test_pol_angle_empty_window_returns_nan():
+    """lmax below smallest effective_ell must NaN-fill, not leak the x0=1 guess."""
+    bp = _bandpowers_small(nbins=10, bin_width=20, lmin=100, lmax=300)
+    so = _so_tracers()
+
+    spec_ss = Spectra(bandpowers=bp)
+    for (t1, t2) in itertools.combinations_with_replacement(so, 2):
+        n = bp.effective_ell.size
+        ee = np.ones(n)
+        bb = np.full(n, 0.1)
+        eb = np.zeros(n)
+        spec_ss.add(SpectrumKey(t1, t2, "EE"), ee, np.full(n, 1e-4))
+        spec_ss.add(SpectrumKey(t1, t2, "BB"), bb, np.full(n, 1e-4))
+        spec_ss.add(SpectrumKey(t1, t2, "EB"), eb, np.full(n, 1e-6))
+
+    # lmax=50 is below every effective_ell (they start above 100), so cap_msk is empty.
+    est = PolarizationAngleEB(spec_ss=spec_ss, lmin=30, lmax_sweep=(50,))
+    result = est.estimate()
+
+    assert np.all(np.isnan(result.values)), result.values
+    assert np.all(np.isnan(result.errors))
 
 
 # ---- T7. Pipeline wiring ----

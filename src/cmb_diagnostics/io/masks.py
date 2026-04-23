@@ -1,14 +1,9 @@
-"""Mask dataclass + loaders.
-
-Mask itself is a real frozen dataclass (pure data, no computation). Loaders
-port from V1 ``PSContainer.init_mask`` / ``init_mask_from_box`` and the helpers
-in ``diag_utils.py``.
-"""
+"""Mask dataclass + loaders."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Sequence
 
 import numpy as np
 
@@ -77,33 +72,90 @@ def load_mask(cfg: MaskConfig, nside: int) -> Mask:
     return Mask(hp_map=np.asarray(hp_map, dtype=np.float64), nside=nside, fsky_effective=fsky)
 
 
-def box2hpmask(nside: int, box: np.ndarray) -> np.ndarray:
-    """Build a boolean HEALPix mask covering one rectangle in (dec, ra) degrees.
+def _parse_bounds(bounds: Sequence[float], name: str) -> tuple[float, float]:
+    arr = np.asarray(bounds, dtype=float).reshape(-1)
+    if arr.size != 2 or not np.all(np.isfinite(arr)):
+        raise ValueError(f"{name} must be a length-2 sequence of finite floats.")
+    return float(arr[0]), float(arr[1])
 
-    ``box`` must be a 2x2 array: ``[[dec_min, ra_min], [dec_max, ra_max]]``.
-    Ported verbatim from ``cmb_diagnoistics/diag_utils.py::box2hpmask``.
+
+def healpix_box_mask(
+    nside: int,
+    lon_bounds_deg: Sequence[float],
+    lat_bounds_deg: Optional[Sequence[float]] = None,
+    colat_bounds_deg: Optional[Sequence[float]] = None,
+    *,
+    nest: bool = False,
+    inclusive: bool = True,
+) -> np.ndarray:
+    """Return a boolean HEALPix mask for a longitude/latitude box.
+
+    Wrap-around in longitude (e.g. ``(350, 20)``) and zero-crossing boxes
+    (e.g. negative-min/positive-max) are handled correctly. Provide exactly
+    one of ``lat_bounds_deg`` or ``colat_bounds_deg``. Membership is decided
+    from pixel-center coordinates from :func:`healpy.pix2ang`.
     """
     import healpy as hp
 
-    box = np.asarray(box, dtype=float)
-    pix_ind = np.arange(hp.nside2npix(nside))
-    pix_ang = np.array(hp.pix2ang(nside, pix_ind, lonlat=True)) / 180 * np.pi
-    box_rad = box / 180 * np.pi
-    if box_rad[1, 1] < 0:
-        ra_cut = (pix_ang[0] > (2 * np.pi + box_rad[0, 1])) * (
-            pix_ang[0] < (2 * np.pi + box_rad[1, 1])
-        )
+    if (lat_bounds_deg is None) == (colat_bounds_deg is None):
+        raise ValueError("Provide exactly one of lat_bounds_deg or colat_bounds_deg.")
+    if not hp.isnsideok(nside):
+        raise ValueError(f"Invalid nside={nside}.")
+
+    lon_start, lon_stop = _parse_bounds(lon_bounds_deg, "lon_bounds_deg")
+    lon_width = abs(lon_stop - lon_start)
+    lon_min = lon_start % 360.0
+    lon_max = lon_stop % 360.0
+    full_longitude = lon_width > 360.0 or np.isclose(lon_width, 360.0)
+
+    if lat_bounds_deg is not None:
+        lat_start, lat_stop = _parse_bounds(lat_bounds_deg, "lat_bounds_deg")
     else:
-        ra_cut = (pix_ang[0] > box_rad[0, 1]) * (pix_ang[0] < box_rad[1, 1])
-    dec_cut = (pix_ang[1] > box_rad[0, 0]) * (pix_ang[1] < box_rad[1, 0])
-    return ra_cut * dec_cut
+        colat_start, colat_stop = _parse_bounds(colat_bounds_deg, "colat_bounds_deg")
+        if not (0.0 <= colat_start <= 180.0 and 0.0 <= colat_stop <= 180.0):
+            raise ValueError("colat_bounds_deg values must lie in [0, 180].")
+        lat_start = 90.0 - colat_start
+        lat_stop = 90.0 - colat_stop
+
+    lat_min = min(lat_start, lat_stop)
+    lat_max = max(lat_start, lat_stop)
+    if lat_min < -90.0 or lat_max > 90.0:
+        raise ValueError("Latitude bounds must lie in [-90, 90].")
+
+    npix = hp.nside2npix(nside)
+    lon_deg, lat_deg = hp.pix2ang(nside, np.arange(npix), nest=nest, lonlat=True)
+    lon_deg = lon_deg % 360.0
+
+    if full_longitude:
+        lon_mask = np.ones(npix, dtype=bool)
+    elif lon_min <= lon_max:
+        lon_mask = (lon_deg >= lon_min) & (lon_deg <= lon_max)
+    else:
+        lon_mask = (lon_deg >= lon_min) | (lon_deg <= lon_max)
+
+    lat_mask = (lat_deg >= lat_min) & (lat_deg <= lat_max)
+    mask = lon_mask & lat_mask
+    return mask if inclusive else ~mask
+
+
+def box2hpmask(nside: int, box: np.ndarray) -> np.ndarray:
+    """Build a boolean HEALPix mask covering one ``[[dec_min, ra_min], [dec_max, ra_max]]`` rectangle in degrees.
+
+    Adapter over :func:`healpix_box_mask` that preserves the legacy 2x2 box
+    schema used by :class:`cmb_diagnostics.config.MaskConfig` and YAML configs.
+    """
+    box = np.asarray(box, dtype=float)
+    if box.shape != (2, 2):
+        raise ValueError(f"box must be shape (2, 2), got {box.shape}")
+    return healpix_box_mask(
+        nside,
+        lon_bounds_deg=(box[0, 1], box[1, 1]),
+        lat_bounds_deg=(box[0, 0], box[1, 0]),
+    )
 
 
 def apodize_square_mask(mask: np.ndarray) -> np.ndarray:
-    """Smooth + C2-apodize a boolean HEALPix mask.
-
-    Ported verbatim from ``cmb_diagnoistics/diag_utils.py::apodize_square_mask``.
-    """
+    """Smooth + C2-apodize a boolean HEALPix mask."""
     import healpy as hp
     import pymaster as nmt
 

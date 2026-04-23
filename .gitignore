@@ -17,10 +17,7 @@ htmlcov/
 .ruff_cache/
 .mypy_cache/
 
-# Legacy output directory (pre-refactor)
-result/
-
-# Debug plot spam from per-bin fits
+# Debug plot spam from per-bin fits (legacy CWD output; new code routes to cfg.output_dir/diagnostics/)
 test/debug_*_fit_*.png
 
 # Virtualenvs

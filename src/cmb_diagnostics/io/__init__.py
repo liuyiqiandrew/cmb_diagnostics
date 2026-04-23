@@ -7,6 +7,7 @@ from cmb_diagnostics.io.masks import (
     apodize_square_mask,
     box2hpmask,
     effective_fsky,
+    healpix_box_mask,
     load_mask,
 )
 
@@ -18,6 +19,7 @@ __all__ = [
     "apodize_square_mask",
     "box2hpmask",
     "effective_fsky",
+    "healpix_box_mask",
     "load_camb_reference",
     "load_mask",
 ]

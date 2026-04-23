@@ -63,6 +63,15 @@ class PolarizationAngleEB:
                         f"PolarizationAngleEB: no variance for ({t1}, {t2}, 'EB'); "
                         "compute_spectra must populate Knox variances before fitting."
                     )
+
+                # Empty / near-empty window: one free parameter needs ≥2 bins for
+                # a meaningful Fisher error; otherwise the optimizer just returns
+                # its starting guess and fisher_error diverges.
+                if cap_msk.sum() < 2:
+                    ang[i, j] = float("nan")
+                    var[i, j] = float("nan")
+                    continue
+
                 template = (ee - bb)[cap_msk]
                 eb_c = eb[cap_msk]
                 eb_var_c = eb_var[cap_msk]

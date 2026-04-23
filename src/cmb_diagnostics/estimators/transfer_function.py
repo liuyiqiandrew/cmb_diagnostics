@@ -49,6 +49,13 @@ def _fit_tf_bin(
         positive_only=(comp == "EE"),
     )
 
+    # Short-circuit when the dust step is undefined (no surviving Planck pairs):
+    # downstream `ref_plk` would be all-NaN, Fitter.fit would return the initial
+    # guess r=1.0, and tf[i] would silently read back as 1.0.
+    if not np.isfinite(dfit.value):
+        nan = float("nan")
+        return nan, nan, float(dfit.value), nan
+
     cmb_at_ell = float(cmb_ref.get(comp)[ell_idx])
     dust_unity_ps = np.array([dust.predict_cross(t1, t2) for (t1, t2) in ps_pairs])
     ref_plk = dfit.value * dust_unity_ps + cmb_at_ell
@@ -157,10 +164,9 @@ class TransferFunctionTE:
         if bp is None:
             raise RuntimeError("TransferFunctionTE requires spec_pp_te.bandpowers")
         eff_ell = bp.effective_ell
+        msk = bp.msk.copy()
         if self.lmin is not None:
-            msk = (eff_ell > self.lmin) & (eff_ell < bp.lmax)
-        else:
-            msk = bp.msk
+            msk &= eff_ell > self.lmin
         bin_indices = np.where(msk)[0]
         n_bins = int(bin_indices.size)
 

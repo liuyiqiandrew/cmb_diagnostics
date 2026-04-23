@@ -178,10 +178,10 @@ class Pipeline:
         (``tf_ee.png``, ``tf_te.png``, ``pol_angle.png``) under
         ``cfg.output_dir``. Returns ``self.results``.
 
-        If ``cfg.advanced.write_diagnostic_plots`` is truthy, emits a warning
-        that per-bin diagnostic plots are deferred to Phase 6.
+        If ``cfg.advanced.write_diagnostic_plots`` is truthy, also writes a
+        per-result ``{name}_diagnostics.png`` under ``cfg.output_dir/diagnostics/``
+        summarizing the per-ell dust amplitude, TF ``r``, and TF chi2.
         """
-        import warnings
         from pathlib import Path
 
         import matplotlib
@@ -194,6 +194,9 @@ class Pipeline:
         out_dir = Path(self.cfg.output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        write_diag = bool(getattr(self.cfg.advanced, "write_diagnostic_plots", False))
+        diag_dir = out_dir / "diagnostics" if write_diag else None
+
         self.load_mask()
         self.build_fieldsets()
         self.compute_spectra()
@@ -203,6 +206,8 @@ class Pipeline:
             target = Tracer(self.cfg.so.name, band.freq, spin=2)
             r = self.estimate_tf_ee(target=target)
             _tf_reports.save_npz(r, out_dir / f"{r.name}.npz")
+            if diag_dir is not None:
+                _tf_reports.plot_diagnostics(r, diag_dir)
             tf_ee_results.append(r)
         if tf_ee_results:
             _tf_reports.plot(tf_ee_results, path=out_dir / "tf_ee.png")
@@ -212,6 +217,8 @@ class Pipeline:
             target = Tracer(self.cfg.so.name, band.freq, spin=2)
             r = self.estimate_tf_te(target=target)
             _tf_reports.save_npz(r, out_dir / f"{r.name}.npz")
+            if diag_dir is not None:
+                _tf_reports.plot_diagnostics(r, diag_dir)
             tf_te_results.append(r)
         if tf_te_results:
             _tf_reports.plot(tf_te_results, path=out_dir / "tf_te.png")
@@ -219,12 +226,5 @@ class Pipeline:
         pa = self.estimate_pol_angle()
         _pa_reports.save_npz(pa, out_dir / f"{pa.name}.npz")
         _pa_reports.plot(pa, path=out_dir / "pol_angle.png")
-
-        if getattr(self.cfg.advanced, "write_diagnostic_plots", False):
-            warnings.warn(
-                "write_diagnostic_plots=True: per-bin diagnostic PNGs are deferred "
-                "to Phase 6; skipping.",
-                stacklevel=2,
-            )
 
         return self.results

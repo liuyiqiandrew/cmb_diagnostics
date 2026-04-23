@@ -16,6 +16,7 @@ from cmb_diagnostics.io.masks import (
     apodize_square_mask,
     box2hpmask,
     effective_fsky,
+    healpix_box_mask,
     load_mask,
 )
 from cmb_diagnostics.spectra.covariance import knox_variance
@@ -31,6 +32,62 @@ def test_box2hpmask_basic():
     assert m.shape == (12 * nside * nside,)
     assert m.sum() > 0
     assert m.sum() < m.size
+
+
+def test_healpix_box_mask_wraparound():
+    # A (350°, 20°) longitude band must wrap across 0°/360°.
+    nside = 32
+    m = healpix_box_mask(nside, lon_bounds_deg=(350.0, 20.0), lat_bounds_deg=(-10.0, 10.0))
+    import healpy as hp
+
+    lon, lat = hp.pix2ang(nside, np.arange(hp.nside2npix(nside)), lonlat=True)
+    lon = lon % 360.0
+    expected = ((lon >= 350.0) | (lon <= 20.0)) & (lat >= -10.0) & (lat <= 10.0)
+    assert np.array_equal(m, expected)
+
+
+def test_healpix_box_mask_zero_crossing_via_negative_min():
+    # A box with negative min RA and positive max RA crosses 0° — the legacy
+    # box2hpmask returned an empty mask in this case; the new function does not.
+    nside = 32
+    m = healpix_box_mask(nside, lon_bounds_deg=(-10.0, 30.0), lat_bounds_deg=(-5.0, 5.0))
+    assert m.sum() > 0
+
+
+def test_healpix_box_mask_full_longitude_returns_band():
+    nside = 16
+    m = healpix_box_mask(nside, lon_bounds_deg=(0.0, 360.0), lat_bounds_deg=(-10.0, 10.0))
+    import healpy as hp
+
+    _, lat = hp.pix2ang(nside, np.arange(hp.nside2npix(nside)), lonlat=True)
+    assert np.array_equal(m, (lat >= -10.0) & (lat <= 10.0))
+
+
+def test_healpix_box_mask_validation():
+    with pytest.raises(ValueError):
+        healpix_box_mask(16, lon_bounds_deg=(0.0, 10.0))  # neither lat nor colat
+    with pytest.raises(ValueError):
+        healpix_box_mask(
+            16, lon_bounds_deg=(0.0, 10.0), lat_bounds_deg=(0.0, 1.0), colat_bounds_deg=(80.0, 90.0)
+        )
+    with pytest.raises(ValueError):
+        healpix_box_mask(16, lon_bounds_deg=(0.0, 10.0), lat_bounds_deg=(-91.0, 0.0))
+
+
+def test_box2hpmask_adapter_matches_healpix_box_mask_on_config_boxes():
+    # The two boxes shipped in configs/satp3_south.yaml.
+    nside = 64
+    south = np.array([[-50.0, 50.0], [-30.0, 90.0]])
+    east = np.array([[-20.0, -165.0], [0.0, -130.0]])
+    for box in (south, east):
+        adapter = box2hpmask(nside, box)
+        direct = healpix_box_mask(
+            nside,
+            lon_bounds_deg=(box[0, 1], box[1, 1]),
+            lat_bounds_deg=(box[0, 0], box[1, 0]),
+        )
+        assert np.array_equal(adapter, direct)
+        assert adapter.sum() > 0
 
 
 def test_effective_fsky_uniform():

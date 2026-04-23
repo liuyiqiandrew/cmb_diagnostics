@@ -78,14 +78,14 @@ Never the reverse, and never skip layers (e.g., `estimators` shouldn't directly 
 | `cmb_diagnostics/reports/pol_angle.py` | Plot + save pol-angle results. | `save_pa_npz`, `plot_pa` |
 | `cmb_diagnostics/cli.py` | Console entry points. | `cmb-diag tf-ee / tf-te / pol-angle / run` |
 
-## Side-by-side deletion list (final state)
+## Side-by-side deletion list (Phase 6, complete)
 
-These live in the old tree and will be removed once Phase 6 lands:
+The following were removed when Phase 6 landed:
 - `cmb_diagnoistics/` (misspelled inner package): deleted.
 - `__init__.py` at repo root (outer wrapper): deleted.
 - `dev/tf_calib.py`: deleted (prototype superseded).
-- Tracked `__pycache__/`: removed and added to `.gitignore`.
-- `result/`: replaced by configurable `output_dir`. Existing outputs remain on `main` for reference.
+- `result/`: replaced by configurable `cfg.output_dir`. Existing outputs remain on `main` for reference.
+- `__pycache__/` is covered by `.gitignore` (no `__pycache__` was ever tracked in this branch).
 
 ## What stays the same
 

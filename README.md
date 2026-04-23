@@ -2,7 +2,7 @@
 
 Derive calibration information (transfer functions, polarization angle) for Simons Observatory CMB maps from SO × Planck cross-spectra.
 
-> **Status:** this branch (`refactor`) carries the new layered package at `src/cmb_diagnostics/`. `cmb-diag run --config <file>` is functional end to end (writes `.npz` + `.png` under `cfg.output_dir`). Phase 6 will delete the legacy `cmb_diagnoistics/` package; until then the working pre-refactor code still lives on `main`. See [Legacy usage](#legacy-usage-pre-refactor) below if you need to reproduce pre-refactor results.
+> **Status:** this branch (`refactor`) carries the new layered package at `src/cmb_diagnostics/`. `cmb-diag run --config <file>` is functional end to end (writes `.npz` + `.png` under `cfg.output_dir`). The legacy `cmb_diagnoistics/` package is gone as of Phase 6; the pre-refactor code still lives on `main` if you need to reproduce pre-refactor results.
 
 ## Why this repo
 
@@ -92,13 +92,12 @@ dependency in `pyproject.toml` would break installs for anyone without git + SSH
 
 ### Contributor note: `PYTHONPATH` footgun
 
-During Phases 2–5 the new package lives at `src/cmb_diagnostics/` and is only
-reachable after `pip install -e ".[dev]"`. **Unset any `PYTHONPATH` entries pointing
-at this repo's parent directory** before installing — otherwise Python resolves
-`import cmb_diagnostics` to the legacy repo-root `__init__.py` (which re-exports the
-misspelled inner package `cmb_diagnoistics/`) and silently shadows the new code. The
-session-scoped `assert_new_package_on_sys_path` fixture in `tests/conftest.py` catches
-this and fails the suite with a clear message if it happens.
+The package lives at `src/cmb_diagnostics/` and is reached after
+`pip install -e ".[dev]"`. **Unset any `PYTHONPATH` entries pointing at this
+repo's parent directory** before installing — otherwise Python may resolve
+`import cmb_diagnostics` to a stale checkout elsewhere on disk. The
+session-scoped guard in `tests/conftest.py` catches this and fails the suite
+with a clear message if `cmb_diagnostics` does not resolve to `src/cmb_diagnostics/`.
 
 ### Notebooks
 
@@ -115,28 +114,10 @@ with the `notebook` extra: `pip install -e ".[dev,notebook]"`.
 | 3 | Port `io/`, `fields/`, `spectra/`, `models/` + component unit tests | **done** |
 | 4 | Port estimators; implement `TransferFunctionTE` properly; add end-to-end regression test against `test/bf_tf.npy` / `ml_tf.npy` | **done** |
 | 5 | Pipeline + CLI + reports; `cmb-diag run` is functional end to end | **done** |
-| 6 | Delete `cmb_diagnoistics/`, `dev/tf_calib.py`, tracked `__pycache__/`; rename package directory | pending |
+| 6 | Delete `cmb_diagnoistics/`, `dev/tf_calib.py`, `result/`; wire diagnostic plots to `cfg.output_dir` | **done** |
 
-## Legacy usage (pre-refactor)
-
-The pre-refactor code on the `main` branch is still functional. If you need it:
-
-```python
-import cmb_diagnostics
-tf_ee = cmb_diagnostics.TransferFuncEE()
-tf_ee.planck_fname = '/path/to/planck_{}.fits'
-tf_ee.so_fname     = '/path/to/so_f{freq:03d}.fits'
-tf_ee.camb_dl_path = '/path/to/camb_lens_nobb.dat'
-tf_ee.init_mask(mask_hp)
-tf_ee.calc_tf_ee()
-```
-
-Pre-refactor README contents:
-
-- Supports: EE TF, TE TF, polarization angle from SO EB.
-- Requires: Planck equatorial HEALPix maps, SO CAR maps, Gaussian beam FWHMs, a CAMB reference `camb_lens_nobb.dat`.
-- Install: `git clone`, add parent of repo to `PYTHONPATH`.
-- Contacts / inquiries: see `main` branch.
+The pre-refactor `cmb_diagnoistics/` god-object code is preserved on the `main`
+branch if you need to reproduce pre-refactor results.
 
 ## Licence
 

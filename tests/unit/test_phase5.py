@@ -494,19 +494,26 @@ def test_pipeline_run_with_synthetic_stack(phase3_config, tmp_path, monkeypatch)
         assert p.stat().st_size > 0
 
 
-def test_pipeline_run_warns_on_diagnostic_plots_flag(phase3_config, tmp_path):
+def test_pipeline_run_writes_diagnostic_plots(phase3_config, tmp_path):
     pytest.importorskip("pygsm")
     import matplotlib
     matplotlib.use("Agg")
 
     from dataclasses import replace
     adv = replace(phase3_config.advanced, write_diagnostic_plots=True)
-    cfg = replace(phase3_config, output_dir=tmp_path / "out2", advanced=adv)
+    out_dir = tmp_path / "out2"
+    cfg = replace(phase3_config, output_dir=out_dir, advanced=adv)
 
     pipe = Pipeline(cfg)
     _install_synthetic_pipeline_state(pipe)
-    with pytest.warns(UserWarning, match="deferred to Phase 6"):
-        pipe.run()
+    pipe.run()
+
+    diag_dir = out_dir / "diagnostics"
+    assert diag_dir.is_dir(), f"diagnostics/ not created under {out_dir}"
+    diag_pngs = list(diag_dir.glob("*_diagnostics.png"))
+    assert diag_pngs, f"no *_diagnostics.png in {diag_dir}"
+    for p in diag_pngs:
+        assert p.stat().st_size > 0
 
 
 # ---- C5. CLI end-to-end with synthetic stack ----
@@ -544,3 +551,44 @@ def test_cli_tf_ee_end_to_end_synthetic(phase3_config_yaml, monkeypatch, tmp_pat
     assert rc == 0
     assert (new_out / "tf_ee_SO_SAT_90.npz").exists()
     assert (new_out / "tf_ee.png").exists()
+
+
+def test_cli_tf_ee_writes_diagnostics_when_flag_set(
+    phase3_config_yaml, monkeypatch, tmp_path
+):
+    """`cmb-diag tf-ee` must honor cfg.advanced.write_diagnostic_plots — mirrors Pipeline.run."""
+    pytest.importorskip("pygsm")
+    import matplotlib
+    matplotlib.use("Agg")
+
+    cfg_text = phase3_config_yaml.read_text()
+    new_out = tmp_path / "cli_diag_out"
+    cfg_text = cfg_text.replace(
+        f"output_dir: {phase3_config_yaml.parent / 'out'}",
+        f"output_dir: {new_out}",
+    )
+    # Append an advanced block turning on the diagnostics flag.
+    cfg_text += "\nadvanced:\n  write_diagnostic_plots: true\n"
+    new_cfg = tmp_path / "cli_diag_cfg.yaml"
+    new_cfg.write_text(cfg_text)
+
+    from cmb_diagnostics import cli as cli_mod
+    from cmb_diagnostics.pipeline import Pipeline
+
+    original_init = Pipeline.__init__
+
+    def patched_init(self, cfg):
+        original_init(self, cfg)
+        _install_synthetic_pipeline_state(self)
+
+    monkeypatch.setattr(Pipeline, "__init__", patched_init)
+
+    rc = cli_mod.main(["tf-ee", "--config", str(new_cfg)])
+    assert rc == 0
+
+    diag_dir = new_out / "diagnostics"
+    assert diag_dir.is_dir(), f"diagnostics/ not created under {new_out}"
+    diag_pngs = list(diag_dir.glob("tf_ee_*_diagnostics.png"))
+    assert diag_pngs, f"no tf_ee_*_diagnostics.png in {diag_dir}"
+    for p in diag_pngs:
+        assert p.stat().st_size > 0
