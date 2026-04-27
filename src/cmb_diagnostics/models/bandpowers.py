@@ -17,6 +17,26 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class Bandpowers:
+    """Linear bandpower binning plus cached effective ell values.
+
+    Parameters
+    ----------
+    nmt_bin : Any
+        The underlying ``pymaster.NmtBin`` instance, or ``None`` for a
+        binless object used only for the ``_effective_ell`` cache.
+    bin_width : int
+        Width in ell of each linear bin.
+    lmin : int
+        Lower ell cutoff for the :attr:`msk` mask.
+    lmax : int
+        Upper ell cutoff for the :attr:`msk` mask.
+    is_dell : bool
+        Whether ``nmt_bin`` bins ``D_ell`` (``True``) or ``C_ell``.
+    _effective_ell : numpy.ndarray or None, optional
+        Precomputed effective-ell array; avoids re-calling
+        ``nmt_bin.get_effective_ells()``.
+    """
+
     nmt_bin: Any
     bin_width: int
     lmin: int
@@ -26,6 +46,19 @@ class Bandpowers:
 
     @property
     def effective_ell(self) -> np.ndarray:
+        """Effective ell per bin.
+
+        Returns
+        -------
+        numpy.ndarray
+            Effective ell values, prefering the cached ``_effective_ell`` over
+            a live call to ``nmt_bin.get_effective_ells()``.
+
+        Raises
+        ------
+        RuntimeError
+            When neither the cache nor ``nmt_bin`` is available.
+        """
         if self._effective_ell is not None:
             return self._effective_ell
         if self.nmt_bin is None:
@@ -36,19 +69,46 @@ class Bandpowers:
 
     @property
     def msk(self) -> np.ndarray:
+        """Boolean mask of bins strictly inside ``(lmin, lmax)``.
+
+        Returns
+        -------
+        numpy.ndarray
+            Boolean array aligned with :attr:`effective_ell`.
+        """
         ell = self.effective_ell
         return (ell > self.lmin) & (ell < self.lmax)
 
     @property
     def dl2cl(self) -> np.ndarray:
+        """Per-bin ``D_ell`` -> ``C_ell`` conversion factor.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``2 * pi / (ell * (ell + 1))`` evaluated at :attr:`effective_ell`.
+        """
         ell = self.effective_ell
         return 2 * np.pi / ell / (ell + 1)
 
     @classmethod
     def from_config(cls, cfg: BandpowersConfig, nside: int) -> Bandpowers:
-        """Build a linearly-binned NmtBin + effective-ell cache.
+        """Build a linearly-binned ``NmtBin`` plus effective-ell cache.
 
         Mirrors V1 ``PSContainer.init_nmt``.
+
+        Parameters
+        ----------
+        cfg : BandpowersConfig
+            Binning parameters (``bin_width``, ``lmin``, ``lmax``, ``is_Dell``).
+        nside : int
+            HEALPix resolution; fixes the maximum ell of the binning.
+
+        Returns
+        -------
+        Bandpowers
+            Populated :class:`Bandpowers` with ``nmt_bin`` and
+            ``_effective_ell`` set.
         """
         import pymaster as nmt
 

@@ -18,28 +18,60 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class MapLoader(Protocol):
+    """Structural protocol for the per-instrument map loader.
+
+    Implementations are dispatched by :func:`get_loader` based on
+    ``InstrumentConfig.pixelization``. Each must yield I/Q/U HEALPix maps in
+    muK at the pipeline's target ``nside`` so downstream code never sees CAR
+    geometry or raw K units.
+    """
+
     def load(self, tracer: Tracer) -> np.ndarray:
         """Return a ``(3, npix)`` I/Q/U HEALPix map at the configured nside."""
         ...
 
 
 def _format_path(template: str, tracer: Tracer) -> str:
-    # Accept both '{freq}' and positional '{}' templates; V1 used the latter.
-    freq_int = int(tracer.freq)
-    try:
-        return template.format(freq=freq_int)
-    except KeyError:
-        return template.format(freq_int)
+    """Format a map path template with the tracer's integer frequency.
+
+    Templates must use the named placeholder ``{freq}`` (e.g.
+    ``map_{freq}.fits`` or ``map_f{freq:03d}.fits``).
+    """
+    return template.format(freq=int(tracer.freq))
 
 
 class PlanckHealpixLoader:
-    """Read Planck equatorial HEALPix T/Q/U FITS maps, ud_grade to nside, scale."""
+    """Load Planck equatorial HEALPix T/Q/U FITS maps.
+
+    Reads T, Q, U fields from a single FITS, ``ud_grade``-s to ``nside``, and
+    applies ``cfg.unit_scale`` (defaults to ``1e6``; K -> muK).
+
+    Parameters
+    ----------
+    cfg : InstrumentConfig
+        Instrument configuration; ``cfg.map_template`` supplies the path
+        template.
+    nside : int
+        Target HEALPix resolution.
+    """
 
     def __init__(self, cfg: InstrumentConfig, nside: int) -> None:
         self.cfg = cfg
         self.nside = nside
 
     def load(self, tracer: Tracer) -> np.ndarray:
+        """Load a T/Q/U HEALPix triplet for ``tracer``.
+
+        Parameters
+        ----------
+        tracer : Tracer
+            Identifier; ``tracer.freq`` drives the path template.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(3, npix)`` array in muK at the configured ``nside``.
+        """
         import healpy as hp
 
         path = _format_path(self.cfg.map_template, tracer)
@@ -50,13 +82,37 @@ class PlanckHealpixLoader:
 
 
 class SOCarLoader:
-    """Read SO CAR FITS maps, reproject to HEALPix, ud_grade to nside, scale."""
+    """Load SO CAR FITS maps and reproject to HEALPix.
+
+    Reads a CAR map via ``pixell.enmap``, reprojects to HEALPix using spline
+    order 1, ``ud_grade``-s to ``nside``, and applies ``cfg.unit_scale``.
+
+    Parameters
+    ----------
+    cfg : InstrumentConfig
+        Instrument configuration; ``cfg.map_template`` supplies the path
+        template.
+    nside : int
+        Target HEALPix resolution.
+    """
 
     def __init__(self, cfg: InstrumentConfig, nside: int) -> None:
         self.cfg = cfg
         self.nside = nside
 
     def load(self, tracer: Tracer) -> np.ndarray:
+        """Load a T/Q/U HEALPix triplet for ``tracer`` from a CAR FITS.
+
+        Parameters
+        ----------
+        tracer : Tracer
+            Identifier; ``tracer.freq`` drives the path template.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(3, npix)`` array in muK at the configured ``nside``.
+        """
         import healpy as hp
         from pixell import enmap, reproject
 
@@ -69,7 +125,26 @@ class SOCarLoader:
 
 
 def get_loader(cfg: InstrumentConfig, nside: int) -> MapLoader:
-    """Dispatch on ``cfg.pixelization``."""
+    """Select a :class:`MapLoader` based on ``cfg.pixelization``.
+
+    Parameters
+    ----------
+    cfg : InstrumentConfig
+        Instrument configuration.
+    nside : int
+        Target HEALPix resolution.
+
+    Returns
+    -------
+    MapLoader
+        :class:`PlanckHealpixLoader` for ``"healpix_equatorial"`` or
+        :class:`SOCarLoader` for ``"car"``.
+
+    Raises
+    ------
+    ValueError
+        On unknown ``cfg.pixelization``.
+    """
     if cfg.pixelization == "healpix_equatorial":
         return PlanckHealpixLoader(cfg, nside)
     if cfg.pixelization == "car":

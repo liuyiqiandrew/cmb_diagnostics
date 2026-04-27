@@ -13,15 +13,28 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class Mask:
+    """Analysis mask with cached effective sky fraction.
+
+    Parameters
+    ----------
+    hp_map : numpy.ndarray
+        HEALPix mask weights (floats in ``[0, 1]`` after apodization).
+    nside : int
+        HEALPix resolution of ``hp_map``.
+    fsky_effective : float
+        Apodization-weighted ``sum(w^2) / Npix``; consumed by Knox covariance.
+    """
+
     hp_map: np.ndarray
     nside: int
     fsky_effective: float
 
 
 def load_mask(cfg: MaskConfig, nside: int) -> Mask:
-    """Build a HEALPix mask from a :class:`MaskConfig`.
+    """Build a HEALPix :class:`Mask` from a :class:`MaskConfig`.
 
-    ``cfg.kind``:
+    ``cfg.kind`` selects the source:
+
     - ``"file"``: read FITS mask from ``cfg.path``. Dispatch on
       ``cfg.pixelization`` (``"healpix"`` via ``healpy.read_map`` or ``"car"``
       via ``pixell`` + ``reproject.map2healpix``).
@@ -29,11 +42,30 @@ def load_mask(cfg: MaskConfig, nside: int) -> Mask:
       rectangle from ``cfg.boxes`` (degrees).
 
     Float vs boolean behavior:
+
     - ``apodize=True``: raw mask is binarized via ``raw > threshold``, then fed
       through the C2 apodization pipeline. Use for boolean input masks.
     - ``apodize=False``: raw mask is kept as floats, with weights below
       ``threshold`` zeroed in place. Use for pre-apodized analysis masks —
       binarizing would destroy the apodization weights.
+
+    Parameters
+    ----------
+    cfg : MaskConfig
+        Typed mask configuration.
+    nside : int
+        Target HEALPix resolution; raw input is ``ud_grade``-d to this value.
+
+    Returns
+    -------
+    Mask
+        Apodized mask plus effective sky fraction.
+
+    Raises
+    ------
+    ValueError
+        When ``cfg`` specifies unknown ``kind``/``pixelization`` or is missing
+        required fields.
     """
     import healpy as hp
 
@@ -91,9 +123,35 @@ def healpix_box_mask(
     """Return a boolean HEALPix mask for a longitude/latitude box.
 
     Wrap-around in longitude (e.g. ``(350, 20)``) and zero-crossing boxes
-    (e.g. negative-min/positive-max) are handled correctly. Provide exactly
-    one of ``lat_bounds_deg`` or ``colat_bounds_deg``. Membership is decided
-    from pixel-center coordinates from :func:`healpy.pix2ang`.
+    (e.g. negative-min/positive-max) are handled correctly. Membership is
+    decided from pixel-center coordinates from :func:`healpy.pix2ang`.
+
+    Parameters
+    ----------
+    nside : int
+        HEALPix resolution.
+    lon_bounds_deg : sequence of float
+        ``(lon_start, lon_stop)`` in degrees. Wrap-around is supported.
+    lat_bounds_deg : sequence of float or None, optional
+        ``(lat_min, lat_max)`` in degrees. Exactly one of this or
+        ``colat_bounds_deg`` must be given.
+    colat_bounds_deg : sequence of float or None, optional
+        ``(colat_start, colat_stop)`` in degrees (``0`` at the north pole).
+    nest : bool, optional
+        HEALPix ordering; forwarded to :func:`healpy.pix2ang`.
+    inclusive : bool, optional
+        When ``False``, return the complement.
+
+    Returns
+    -------
+    numpy.ndarray
+        Boolean array of length ``hp.nside2npix(nside)``.
+
+    Raises
+    ------
+    ValueError
+        On invalid ``nside``, missing/duplicate latitude inputs, or
+        out-of-range bounds.
     """
     import healpy as hp
 
@@ -139,10 +197,28 @@ def healpix_box_mask(
 
 
 def box2hpmask(nside: int, box: np.ndarray) -> np.ndarray:
-    """Build a boolean HEALPix mask covering one ``[[dec_min, ra_min], [dec_max, ra_max]]`` rectangle in degrees.
+    """Build a boolean HEALPix mask from a legacy 2x2 box.
 
-    Adapter over :func:`healpix_box_mask` that preserves the legacy 2x2 box
-    schema used by :class:`cmb_diagnostics.config.MaskConfig` and YAML configs.
+    Thin adapter over :func:`healpix_box_mask` that preserves the legacy
+    ``[[dec_min, ra_min], [dec_max, ra_max]]`` schema used by
+    :class:`cmb_diagnostics.config.MaskConfig` and YAML configs.
+
+    Parameters
+    ----------
+    nside : int
+        HEALPix resolution.
+    box : numpy.ndarray
+        ``(2, 2)`` array ``[[dec_min, ra_min], [dec_max, ra_max]]`` in degrees.
+
+    Returns
+    -------
+    numpy.ndarray
+        Boolean HEALPix mask for the enclosed rectangle.
+
+    Raises
+    ------
+    ValueError
+        When ``box`` is not of shape ``(2, 2)``.
     """
     box = np.asarray(box, dtype=float)
     if box.shape != (2, 2):
@@ -155,7 +231,23 @@ def box2hpmask(nside: int, box: np.ndarray) -> np.ndarray:
 
 
 def apodize_square_mask(mask: np.ndarray) -> np.ndarray:
-    """Smooth + C2-apodize a boolean HEALPix mask."""
+    """Smooth and C2-apodize a boolean HEALPix mask.
+
+    The input is first smoothed with a 4-degree Gaussian, clipped to
+    nonnegative values, and renormalized; pixels below ``ZERO = 1e-4`` are
+    dropped before NaMaster's ``mask_apodization`` applies a 10-degree C2
+    window.
+
+    Parameters
+    ----------
+    mask : numpy.ndarray
+        Boolean or float HEALPix mask.
+
+    Returns
+    -------
+    numpy.ndarray
+        Smoothly apodized float mask suitable for NaMaster.
+    """
     import healpy as hp
     import pymaster as nmt
 
@@ -168,10 +260,21 @@ def apodize_square_mask(mask: np.ndarray) -> np.ndarray:
 
 
 def effective_fsky(mask: np.ndarray) -> float:
-    """Apodization-weighted effective sky fraction: ``sum(w^2) / Npix``.
+    """Apodization-weighted effective sky fraction.
 
-    Replaces V1's plain ``sum(w) / Npix``; the squared form is the conventional
-    effective fsky for Gaussian (Knox) covariance with an apodized mask.
+    Computes ``sum(w^2) / Npix`` — the conventional effective fsky for
+    Gaussian (Knox) covariance on an apodized mask. Replaces V1's plain
+    ``sum(w) / Npix``.
+
+    Parameters
+    ----------
+    mask : numpy.ndarray
+        HEALPix mask weights.
+
+    Returns
+    -------
+    float
+        Effective sky fraction in ``[0, 1]``.
     """
     m = np.asarray(mask, dtype=np.float64)
     return float((m ** 2).sum() / m.size)

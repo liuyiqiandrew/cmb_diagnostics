@@ -14,7 +14,18 @@ if TYPE_CHECKING:
 
 
 def save_npz(result: FitResult, path: str | Path) -> None:
-    """Save a TF :class:`FitResult` to an npz via :meth:`FitResult.save_npz`."""
+    """Save a TF :class:`FitResult` to an npz file.
+
+    Thin wrapper over :meth:`FitResult.save_npz` exposed alongside
+    :func:`plot` so callers can import from a single reporting module.
+
+    Parameters
+    ----------
+    result : FitResult
+        TF result.
+    path : str or Path
+        Destination.
+    """
     result.save_npz(path)
 
 
@@ -27,9 +38,26 @@ def plot(
 ) -> tuple[Figure, Axes]:
     """Plot one or more TF results as errorbars.
 
-    ``reference_tf`` (optional) is overlaid as a dashed black line. Pass either
-    ``(ell, tf)`` or an array of shape ``(2, n)``. Writes to ``path`` only if
-    given; always returns ``(fig, ax)``.
+    Parameters
+    ----------
+    results : sequence of FitResult
+        One errorbar series per result; labels come from
+        ``result.metadata['target']`` when present.
+    path : str or Path or None, optional
+        When given, save the figure there after plotting.
+    ax : matplotlib.axes.Axes or None, optional
+        Axis to draw on; when ``None``, create a new figure.
+    reference_tf : array-like or None, optional
+        Overlay a dashed reference TF. Accepts either a ``(2, n)`` array or
+        a ``(ell, tf)`` sequence.
+    **kwargs
+        ``dpi`` is consumed for new-figure creation; other kwargs are
+        ignored.
+
+    Returns
+    -------
+    tuple of (matplotlib.figure.Figure, matplotlib.axes.Axes)
+        The figure / axis pair.
     """
     import matplotlib.pyplot as plt
 
@@ -70,11 +98,23 @@ def plot_diagnostics(
     result: FitResult,
     out_dir: str | Path,
 ) -> Path | None:
-    """Per-bin TF diagnostic plot: r, dust amplitude, and fit chi2 vs ell.
+    """Per-bin TF diagnostic plot: ``r``, ``dust_amp``, and chi^2 vs ell.
 
-    Replaces the legacy per-bin ``debug_dust_fit_*.png`` / ``debug_tf_fit_*.png``
-    dumps to CWD. Writes ``{out_dir}/{result.name}_diagnostics.png`` and returns
-    the path. Returns ``None`` if the result carries no diagnostics.
+    Replaces the legacy per-bin ``debug_dust_fit_*.png`` /
+    ``debug_tf_fit_*.png`` dumps to CWD.
+
+    Parameters
+    ----------
+    result : FitResult
+        TF result; ``diagnostics`` must contain at least one of ``"r"``,
+        ``"dust_amp"``, ``"chi2_tf"`` for a plot to be produced.
+    out_dir : str or Path
+        Output directory; created if missing.
+
+    Returns
+    -------
+    Path or None
+        Path to the written PNG, or ``None`` when there are no diagnostics.
     """
     import matplotlib.pyplot as plt
 

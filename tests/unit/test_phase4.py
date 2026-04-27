@@ -411,6 +411,58 @@ def test_pol_angle_empty_window_returns_nan():
     assert np.all(np.isnan(result.errors))
 
 
+# ---- T6.5. compute_spectra D_l -> C_l conversion ----
+
+
+def test_compute_spectra_converts_dell_to_cell(monkeypatch):
+    """compute_spectra applies bandpowers.dl2cl when is_dell=True and not when False.
+
+    With is_dell=True, NaMaster's compute_full_master returns D_l = l(l+1)/(2pi) * C_l;
+    compute_spectra must divide by that factor so downstream Spectra are in C_l. This
+    test stubs compute_full_master and asserts the conversion is applied.
+    """
+    pytest.importorskip("pymaster")
+    from cmb_diagnostics.fields.container import FieldSet
+    from cmb_diagnostics.models.bandpowers import Bandpowers
+    from cmb_diagnostics.spectra.compute import compute_spectra
+
+    nbins = 5
+    eff_ell = np.array([50.0, 100.0, 200.0, 300.0, 400.0])
+    dl2cl = 2 * np.pi / eff_ell / (eff_ell + 1)
+
+    common = dict(
+        nmt_bin=object(), bin_width=20, lmin=10, lmax=500,
+        _effective_ell=eff_ell,
+    )
+    bp_dell = Bandpowers(is_dell=True, **common)
+    bp_cl = Bandpowers(is_dell=False, **common)
+
+    raw = 1.5
+    canned4 = np.full((4, nbins), raw)  # spin2 x spin2
+    import pymaster as nmt
+
+    def fake_cfm(f1, f2, nmt_bin):
+        return canned4
+
+    monkeypatch.setattr(nmt, "compute_full_master", fake_cfm)
+
+    plk_e = Tracer("Planck", 100.0, spin=2)
+    fs = FieldSet("Planck")
+    fs.add(plk_e, object())  # any sentinel; cfm is stubbed
+
+    spec_dell = compute_spectra(fs, fs, bp_dell, fsky_effective=0.3)
+    spec_cl = compute_spectra(fs, fs, bp_cl, fsky_effective=0.3)
+
+    cl_dell, var_dell = spec_dell.get(plk_e, plk_e, "EE")
+    cl_cl, var_cl = spec_cl.get(plk_e, plk_e, "EE")
+
+    np.testing.assert_allclose(cl_dell, raw * dl2cl)
+    np.testing.assert_allclose(cl_cl, np.full(nbins, raw))
+
+    # Knox variance scales as C_l^2 in the C_l path, D_l^2 in the unconverted path.
+    np.testing.assert_allclose(var_dell, var_cl * dl2cl ** 2)
+
+
 # ---- T7. Pipeline wiring ----
 
 

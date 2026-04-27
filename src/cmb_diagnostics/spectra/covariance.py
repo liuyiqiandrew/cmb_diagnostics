@@ -22,11 +22,32 @@ def knox_variance(
     fsky_effective: float,
     cl_ba: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Bandpower variance under Gaussian, disconnected-trispectrum approximation.
+    """Bandpower variance in the Gaussian disconnected-trispectrum limit.
 
-    ``Var(C_AB) = (C_AA * C_BB + C_AB * C_BA) / ((2l+1) * fsky * dl)``.
-    For symmetric components (EE, BB, TT, TE), ``cl_ba == cl_ab``; for EB / BE
-    pass ``cl_ba`` explicitly.
+    Implements ``Var(C_AB) = (C_AA * C_BB + C_AB * C_BA) / ((2*ell+1) *
+    fsky * dl)``. For symmetric components (EE, BB, TT, TE) ``cl_ba == cl_ab``;
+    for EB/BE pass ``cl_ba`` explicitly.
+
+    Parameters
+    ----------
+    cl_aa : numpy.ndarray
+        Auto-spectrum of tracer A.
+    cl_bb : numpy.ndarray
+        Auto-spectrum of tracer B.
+    cl_ab : numpy.ndarray
+        Cross-spectrum ``AB``.
+    bandpowers : Bandpowers
+        Bin definition; supplies ``effective_ell`` and ``bin_width``.
+    fsky_effective : float
+        Apodization-weighted effective sky fraction (``sum(w^2) / Npix``).
+    cl_ba : numpy.ndarray or None, optional
+        Swapped cross-spectrum ``BA``. Defaults to ``cl_ab`` for symmetric
+        components.
+
+    Returns
+    -------
+    numpy.ndarray
+        Per-bin variance aligned with ``bandpowers.effective_ell``.
     """
     cl_ba_arr = cl_ab if cl_ba is None else cl_ba
     ell = bandpowers.effective_ell

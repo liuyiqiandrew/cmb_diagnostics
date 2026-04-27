@@ -11,6 +11,7 @@ from cmb_diagnostics.config import Config, ConfigError
 
 
 def test_from_yaml_loads_tiny_config(tiny_config: Config):
+    """Load tiny config YAML and verify expected fields are populated."""
     assert tiny_config.schema_version == "1"
     assert tiny_config.nside == 16
     assert tiny_config.bandpowers.bin_width == 10
@@ -24,6 +25,7 @@ def test_from_yaml_loads_tiny_config(tiny_config: Config):
 
 
 def test_from_dict_matches_from_yaml(tiny_config_yaml: Path):
+    """`Config.from_dict` and `Config.from_yaml` produce equal Configs."""
     data = yaml.safe_load(tiny_config_yaml.read_text())
     cfg_dict = Config.from_dict(data)
     cfg_yaml = Config.from_yaml(tiny_config_yaml)
@@ -31,6 +33,7 @@ def test_from_dict_matches_from_yaml(tiny_config_yaml: Path):
 
 
 def test_missing_schema_version_raises(tmp_path: Path):
+    """Missing `schema_version` raises `ConfigError`."""
     p = tmp_path / "no_schema.yaml"
     p.write_text("nside: 16\n")
     with pytest.raises(ConfigError, match="schema_version"):
@@ -38,6 +41,7 @@ def test_missing_schema_version_raises(tmp_path: Path):
 
 
 def test_wrong_schema_version_raises(tmp_path: Path):
+    """Mismatched `schema_version` raises `ConfigError`."""
     p = tmp_path / "wrong.yaml"
     p.write_text('schema_version: "99"\nnside: 16\n')
     with pytest.raises(ConfigError, match="schema_version"):
@@ -45,6 +49,7 @@ def test_wrong_schema_version_raises(tmp_path: Path):
 
 
 def test_unknown_top_level_key_warns(tiny_config_yaml: Path):
+    """Unknown top-level keys emit a `UserWarning` but still load."""
     data = yaml.safe_load(tiny_config_yaml.read_text())
     data["frobnicate"] = True
     with pytest.warns(UserWarning, match="frobnicate"):
@@ -52,6 +57,7 @@ def test_unknown_top_level_key_warns(tiny_config_yaml: Path):
 
 
 def test_duplicate_band_freq_raises(tiny_config_yaml: Path):
+    """Duplicate band frequencies in one instrument raise `ConfigError`."""
     data = yaml.safe_load(tiny_config_yaml.read_text())
     data["planck"]["bands"] = [
         {"freq": 143, "beam_fwhm_arcmin": 7.0},
@@ -62,6 +68,7 @@ def test_duplicate_band_freq_raises(tiny_config_yaml: Path):
 
 
 def test_missing_required_instrument_key_raises(tiny_config_yaml: Path):
+    """Dropping a required instrument field raises `ConfigError`."""
     data = yaml.safe_load(tiny_config_yaml.read_text())
     del data["planck"]["map_template"]
     with pytest.raises(ConfigError, match="planck.map_template"):
@@ -69,5 +76,6 @@ def test_missing_required_instrument_key_raises(tiny_config_yaml: Path):
 
 
 def test_file_not_found_raises(tmp_path: Path):
+    """Nonexistent YAML path raises `ConfigError`."""
     with pytest.raises(ConfigError, match="not found"):
         Config.from_yaml(tmp_path / "missing.yaml")

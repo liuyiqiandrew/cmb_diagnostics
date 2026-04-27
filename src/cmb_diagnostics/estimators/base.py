@@ -15,6 +15,27 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class FitResult:
+    """Result of a single estimator run (TF, pol-angle, ...).
+
+    Parameters
+    ----------
+    name : str
+        Stable identifier used as the default filename stem.
+    ell : numpy.ndarray
+        Per-bin ell axis aligned with ``values``.
+    values : numpy.ndarray
+        Fit values. 1-D for TF, 2-D ``(n_pairs, n_caps)`` for pol-angle.
+    errors : numpy.ndarray
+        1-sigma errors aligned with ``values``.
+    diagnostics : dict of str to numpy.ndarray, optional
+        Per-bin quantities useful for debugging (``"r"``, ``"dust_amp"``,
+        ``"chi2_tf"``, ``"so_pairs"``, ...). Serialized to ``diag_<key>``
+        when saved.
+    metadata : dict of str to Any, optional
+        Freeform metadata (e.g. the estimator name or target :class:`Tracer`).
+        Not serialized.
+    """
+
     name: str
     ell: np.ndarray
     values: np.ndarray
@@ -23,6 +44,13 @@ class FitResult:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def save_npz(self, path: str | Path) -> None:
+        """Serialize this result to a single npz file.
+
+        Parameters
+        ----------
+        path : str or Path
+            Destination path; parent directories are created as needed.
+        """
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         np.savez(
@@ -36,6 +64,18 @@ class FitResult:
 
     @classmethod
     def load_npz(cls, path: str | Path) -> FitResult:
+        """Reconstruct a :class:`FitResult` written by :meth:`save_npz`.
+
+        Parameters
+        ----------
+        path : str or Path
+            Source npz path.
+
+        Returns
+        -------
+        FitResult
+            Populated result; ``metadata`` is empty (not round-tripped).
+        """
         p = Path(path)
         data = np.load(p, allow_pickle=False)
         diagnostics = {
@@ -98,8 +138,20 @@ class FitResult:
     ) -> tuple[Figure, Axes]:
         """Plot the fit result.
 
-        Dispatches on ``values.ndim``: 1-D → TF-style errorbars; 2-D →
-        pol-angle sweep. Returns ``(fig, ax)``; never writes to disk.
+        Dispatches on ``values.ndim``: 1-D renders TF-style errorbars; 2-D
+        renders a pol-angle sweep. Never writes to disk.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes or None, optional
+            Axis to draw on; when ``None``, a new figure is created.
+        **kwargs
+            Forwarded to the delegated plotter.
+
+        Returns
+        -------
+        tuple of (matplotlib.figure.Figure, matplotlib.axes.Axes)
+            The figure / axis pair.
         """
         if self.values.ndim == 2:
             from cmb_diagnostics.reports import pol_angle as _pa
@@ -110,4 +162,13 @@ class FitResult:
 
 @runtime_checkable
 class Estimator(Protocol):
-    def estimate(self, *args: Any, **kwargs: Any) -> FitResult: ...
+    """Structural protocol for any estimator returning a :class:`FitResult`.
+
+    Implementations need only expose an ``estimate`` method; the concrete
+    signature is left to the implementer (e.g. ``estimate(target=...)`` for
+    transfer-function estimators, ``estimate()`` for the pol-angle sweep).
+    """
+
+    def estimate(self, *args: Any, **kwargs: Any) -> FitResult:
+        """Run the estimator and return its :class:`FitResult`."""
+        ...

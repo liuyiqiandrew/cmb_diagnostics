@@ -19,16 +19,16 @@ if TYPE_CHECKING:
     from cmb_diagnostics.models.bandpowers import Bandpowers
 
 
-def _pp_auto(field, nmt_bin):
+def _pp_auto(field, nmt_bin, dl2cl):
     import pymaster as nmt
 
-    return nmt.compute_full_master(field, field, nmt_bin)  # [EE, EB, BE, BB]
+    return [c * dl2cl for c in nmt.compute_full_master(field, field, nmt_bin)]  # [EE, EB, BE, BB]
 
 
-def _tt_auto(field, nmt_bin):
+def _tt_auto(field, nmt_bin, dl2cl):
     import pymaster as nmt
 
-    return nmt.compute_full_master(field, field, nmt_bin)  # [TT]
+    return [c * dl2cl for c in nmt.compute_full_master(field, field, nmt_bin)]  # [TT]
 
 
 def compute_spectra(
@@ -37,16 +37,37 @@ def compute_spectra(
     bandpowers: Bandpowers,
     fsky_effective: float,
 ) -> Spectra:
-    """Compute all component spectra + Knox variances between ``fa`` and ``fb``.
+    """Run NaMaster MASTER over every tracer pair between ``fa`` and ``fb``.
 
-    Handled spin combinations:
-    - (2, 2): EE, EB, BE, BB
-    - (0, 0): TT
-    - (0, 2): TE, TB
+    Handled spin combinations
+    -------------------------
+    - ``(2, 2)``: EE, EB, BE, BB
+    - ``(0, 0)``: TT
+    - ``(0, 2)``: TE, TB — only emitted for ``(spin-0 in fa, spin-2 in fb)``
+      (and the swapped direction when ``fa is not fb``).
 
-    Only ``(0, 2)`` is emitted for mixed-spin pairs; for ``(t_spin2, t_spin0)``
-    the equivalent spectrum is obtainable from the swapped pair on the other
-    direction (when ``fa != fb``, this is the ``(t_fb_spin0, t_fa_spin2)`` case).
+    Parameters
+    ----------
+    fa : FieldSet
+        First-side :class:`~cmb_diagnostics.fields.container.FieldSet`.
+    fb : FieldSet
+        Second-side :class:`~cmb_diagnostics.fields.container.FieldSet`; may
+        be ``fa`` (auto) or a different instrument (cross).
+    bandpowers : Bandpowers
+        Must expose a populated ``nmt_bin``.
+    fsky_effective : float
+        Apodization-weighted effective sky fraction; fed to
+        :func:`knox_variance`.
+
+    Returns
+    -------
+    Spectra
+        All populated spectra and their Knox variances.
+
+    Raises
+    ------
+    RuntimeError
+        When ``bandpowers.nmt_bin`` is ``None``.
     """
     import pymaster as nmt
 
@@ -55,19 +76,23 @@ def compute_spectra(
     nmt_bin = bandpowers.nmt_bin
     spec = Spectra(bandpowers=bandpowers)
 
+    # NaMaster returns D_ell when the bin was built with is_Dell=True; convert
+    # once at the source so every Spectra and Knox variance downstream is C_ell.
+    dl2cl = bandpowers.dl2cl if bandpowers.is_dell else 1.0
+
     spin2_a = [t for t in fa.tracers(spin=2)]
     spin2_b = [t for t in fb.tracers(spin=2)]
     spin0_a = [t for t in fa.tracers(spin=0)]
     spin0_b = [t for t in fb.tracers(spin=0)]
 
-    pp_auto_a = {t: _pp_auto(fa.get(t), nmt_bin) for t in spin2_a}
-    pp_auto_b = pp_auto_a if fa is fb else {t: _pp_auto(fb.get(t), nmt_bin) for t in spin2_b}
-    tt_auto_a = {t: _tt_auto(fa.get(t), nmt_bin) for t in spin0_a}
-    tt_auto_b = tt_auto_a if fa is fb else {t: _tt_auto(fb.get(t), nmt_bin) for t in spin0_b}
+    pp_auto_a = {t: _pp_auto(fa.get(t), nmt_bin, dl2cl) for t in spin2_a}
+    pp_auto_b = pp_auto_a if fa is fb else {t: _pp_auto(fb.get(t), nmt_bin, dl2cl) for t in spin2_b}
+    tt_auto_a = {t: _tt_auto(fa.get(t), nmt_bin, dl2cl) for t in spin0_a}
+    tt_auto_b = tt_auto_a if fa is fb else {t: _tt_auto(fb.get(t), nmt_bin, dl2cl) for t in spin0_b}
 
     # spin-2 x spin-2
     for t1, t2 in itertools.product(spin2_a, spin2_b):
-        ee, eb, be, bb = nmt.compute_full_master(fa.get(t1), fb.get(t2), nmt_bin)
+        ee, eb, be, bb = (c * dl2cl for c in nmt.compute_full_master(fa.get(t1), fb.get(t2), nmt_bin))
         a_ee = pp_auto_a[t1][0]
         a_bb = pp_auto_a[t1][3]
         b_ee = pp_auto_b[t2][0]
@@ -83,13 +108,14 @@ def compute_spectra(
 
     # spin-0 x spin-0
     for t1, t2 in itertools.product(spin0_a, spin0_b):
-        (tt,) = nmt.compute_full_master(fa.get(t1), fb.get(t2), nmt_bin)
+        (tt_raw,) = nmt.compute_full_master(fa.get(t1), fb.get(t2), nmt_bin)
+        tt = tt_raw * dl2cl
         dtt = knox_variance(tt_auto_a[t1][0], tt_auto_b[t2][0], tt, bandpowers, fsky_effective)
         spec.add(SpectrumKey(t1, t2, "TT"), tt, dtt)
 
     # spin-0 (fa) x spin-2 (fb): TE, TB
     for t1, t2 in itertools.product(spin0_a, spin2_b):
-        te, tb = nmt.compute_full_master(fa.get(t1), fb.get(t2), nmt_bin)
+        te, tb = (c * dl2cl for c in nmt.compute_full_master(fa.get(t1), fb.get(t2), nmt_bin))
         a_tt = tt_auto_a[t1][0]
         b_ee = pp_auto_b[t2][0]
         b_bb = pp_auto_b[t2][3]
@@ -102,7 +128,7 @@ def compute_spectra(
     # (skip when fa is fb to avoid recomputing the same pairs)
     if fa is not fb:
         for t1, t2 in itertools.product(spin0_b, spin2_a):
-            te, tb = nmt.compute_full_master(fb.get(t1), fa.get(t2), nmt_bin)
+            te, tb = (c * dl2cl for c in nmt.compute_full_master(fb.get(t1), fa.get(t2), nmt_bin))
             a_tt = tt_auto_b[t1][0]
             b_ee = pp_auto_a[t2][0]
             b_bb = pp_auto_a[t2][3]

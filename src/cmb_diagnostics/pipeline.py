@@ -32,9 +32,10 @@ if TYPE_CHECKING:
 
 
 class Pipeline:
-    """Orchestrates a full SO-diagnostics run from a :class:`Config`.
+    """Orchestrate a full SO-diagnostics run from a :class:`Config`.
 
-    Step methods populate attributes so notebook users can inspect each stage:
+    Each step populates instance attributes so notebook users can inspect
+    every intermediate product:
 
     .. code-block:: python
 
@@ -43,6 +44,28 @@ class Pipeline:
         pipe.build_fieldsets()
         pipe.compute_spectra()
         tf90 = pipe.estimate_tf_ee(target=Tracer("SO_SAT", 90.0, spin=2))
+
+    Parameters
+    ----------
+    cfg : Config
+        Typed configuration driving the run.
+
+    Attributes
+    ----------
+    cfg : Config
+        The originating configuration.
+    mask : Mask or None
+        Populated by :meth:`load_mask`.
+    bandpowers : Bandpowers or None
+        Populated by :meth:`load_mask`.
+    cmb_ref : CMBReference or None
+        Populated by :meth:`load_mask`.
+    fieldsets : dict of str to FieldSet
+        Populated by :meth:`build_fieldsets`; keys ``"planck"`` and ``"so"``.
+    spectra : dict of str to Spectra
+        Populated by :meth:`compute_spectra`; keys ``"pp"``, ``"ps"``, ``"ss"``.
+    results : dict of str to FitResult
+        Populated by estimator methods; keyed by ``FitResult.name``.
     """
 
     def __init__(self, cfg: Config) -> None:
@@ -55,8 +78,14 @@ class Pipeline:
         self.results: dict[str, FitResult] = {}
 
     def load_mask(self) -> Mask:
-        """Load mask, build bandpowers, parse CAMB reference. Populates
-        ``self.mask``, ``self.bandpowers``, ``self.cmb_ref``.
+        """Load the analysis mask, build bandpowers, parse CAMB reference.
+
+        Populates ``self.mask``, ``self.bandpowers``, and ``self.cmb_ref``.
+
+        Returns
+        -------
+        Mask
+            The loaded and apodized mask.
         """
         self.mask = load_mask(self.cfg.mask, self.cfg.nside)
         self.bandpowers = Bandpowers.from_config(self.cfg.bandpowers, self.cfg.nside)
@@ -64,7 +93,20 @@ class Pipeline:
         return self.mask
 
     def build_fieldsets(self) -> dict[str, FieldSet]:
-        """Build Planck and SO ``FieldSet``s. Requires :meth:`load_mask` first."""
+        """Build Planck and SO :class:`FieldSet` objects.
+
+        Requires :meth:`load_mask` to have populated ``self.mask`` first.
+
+        Returns
+        -------
+        dict of str to FieldSet
+            ``{"planck": ..., "so": ...}``.
+
+        Raises
+        ------
+        RuntimeError
+            When :meth:`load_mask` has not yet been called.
+        """
         if self.mask is None:
             raise RuntimeError("Pipeline.build_fieldsets: call load_mask() first")
         self.fieldsets["planck"] = build_fieldset(self.cfg.planck, self.mask, self.cfg.nside)
@@ -72,7 +114,22 @@ class Pipeline:
         return self.fieldsets
 
     def compute_spectra(self) -> dict[str, Spectra]:
-        """Compute PP, PS, SS spectra + Knox variances. Requires fieldsets."""
+        """Compute Planck x Planck, Planck x SO, and SO x SO spectra.
+
+        All three :class:`Spectra` populate Knox variances at compute time so
+        downstream estimators can consume them directly. Requires
+        :meth:`build_fieldsets` to have run.
+
+        Returns
+        -------
+        dict of str to Spectra
+            ``{"pp": ..., "ps": ..., "ss": ...}``.
+
+        Raises
+        ------
+        RuntimeError
+            When prerequisites are missing.
+        """
         if self.mask is None or self.bandpowers is None:
             raise RuntimeError("Pipeline.compute_spectra: call load_mask() first")
         if "planck" not in self.fieldsets or "so" not in self.fieldsets:
@@ -129,7 +186,18 @@ class Pipeline:
         )
 
     def estimate_tf_ee(self, target: Tracer) -> FitResult:
-        """Fit EE TF for ``target`` (typically an SO spin-2 Tracer)."""
+        """Fit the EE transfer function for ``target``.
+
+        Parameters
+        ----------
+        target : Tracer
+            Typically an SO spin-2 tracer.
+
+        Returns
+        -------
+        FitResult
+            The fit result, also stored in ``self.results[result.name]``.
+        """
         self._ensure_spectra()
         assert self.cmb_ref is not None  # _ensure_spectra implies load_mask ran
         est = TransferFunctionEE(
@@ -143,7 +211,18 @@ class Pipeline:
         return result
 
     def estimate_tf_te(self, target: Tracer) -> FitResult:
-        """Fit TE TF for ``target`` (typically an SO spin-2 Tracer)."""
+        """Fit the TE transfer function for ``target``.
+
+        Parameters
+        ----------
+        target : Tracer
+            Typically an SO spin-2 tracer.
+
+        Returns
+        -------
+        FitResult
+            The fit result, also stored in ``self.results[result.name]``.
+        """
         self._ensure_spectra()
         assert self.cmb_ref is not None
         est = TransferFunctionTE(
@@ -158,7 +237,14 @@ class Pipeline:
         return result
 
     def estimate_pol_angle(self) -> FitResult:
-        """Fit SO polarization angle from EB over the configured lmax sweep."""
+        """Fit the SO polarization angle from ``EB`` over the lmax sweep.
+
+        Returns
+        -------
+        FitResult
+            2-D result (``n_pairs`` x ``n_caps``) with angles in radians,
+            also stored in ``self.results[result.name]``.
+        """
         self._ensure_spectra()
         est = PolarizationAngleEB(
             spec_ss=self.spectra["ss"],
@@ -170,17 +256,23 @@ class Pipeline:
         return result
 
     def run(self) -> dict[str, FitResult]:
-        """Run the full pipeline end-to-end.
+        """Run the full pipeline end-to-end and write all artifacts.
 
         Composes ``load_mask -> build_fieldsets -> compute_spectra -> per-band
-        estimate_tf_ee / estimate_tf_te -> estimate_pol_angle``, writes
-        ``{name}.npz`` for each FitResult and three combined ``.png`` files
-        (``tf_ee.png``, ``tf_te.png``, ``pol_angle.png``) under
-        ``cfg.output_dir``. Returns ``self.results``.
+        estimate_tf_ee / estimate_tf_te -> estimate_pol_angle``. Writes
+        ``{name}.npz`` for each :class:`FitResult` and three combined ``.png``
+        files (``tf_ee.png``, ``tf_te.png``, ``pol_angle.png``) under
+        ``cfg.output_dir``.
 
-        If ``cfg.advanced.write_diagnostic_plots`` is truthy, also writes a
-        per-result ``{name}_diagnostics.png`` under ``cfg.output_dir/diagnostics/``
-        summarizing the per-ell dust amplitude, TF ``r``, and TF chi2.
+        When ``cfg.advanced.write_diagnostic_plots`` is truthy, also writes a
+        per-result ``{name}_diagnostics.png`` under
+        ``cfg.output_dir/diagnostics/`` summarizing the per-ell dust amplitude,
+        TF ``r``, and TF chi^2.
+
+        Returns
+        -------
+        dict of str to FitResult
+            ``self.results`` after all estimators have run.
         """
         from pathlib import Path
 

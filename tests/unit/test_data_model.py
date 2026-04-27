@@ -13,6 +13,7 @@ from cmb_diagnostics._types import BandInfo
 
 
 def test_tracer_frozen_and_hashable():
+    """`Tracer` is immutable, equal-by-value, and usable as a dict key."""
     t1 = Tracer("Planck", 143.0, 2)
     t2 = Tracer("Planck", 143.0, 2)
     assert t1 == t2
@@ -24,12 +25,14 @@ def test_tracer_frozen_and_hashable():
 
 
 def test_bandinfo_default_fields():
+    """`BandInfo` optional fields default to `None` / `1.0` when omitted."""
     bi = BandInfo(Tracer("Planck", 143.0, 2), beam_fwhm_arcmin=7.27)
     assert bi.eff_freq_cmb is None
     assert bi.unit_scale == 1.0
 
 
 def test_spectrumkey_equality_by_value():
+    """`SpectrumKey` compares equal by its contained tracers and component."""
     k1 = SpectrumKey(Tracer("Planck", 100.0, 2), Tracer("Planck", 143.0, 2), "EE")
     k2 = SpectrumKey(Tracer("Planck", 100.0, 2), Tracer("Planck", 143.0, 2), "EE")
     assert k1 == k2
@@ -37,12 +40,14 @@ def test_spectrumkey_equality_by_value():
 
 
 def test_mask_is_frozen():
+    """`Mask` is a frozen dataclass; mutation raises `FrozenInstanceError`."""
     m = Mask(hp_map=np.ones(12), nside=1, fsky_effective=0.5)
     with pytest.raises(dataclasses.FrozenInstanceError):
         m.nside = 2  # type: ignore[misc]
 
 
 def test_spectra_add_get_roundtrip(spectrumkey_factory):
+    """`Spectra.add` / `get` / `has` round-trip cl and var arrays."""
     s = Spectra()
     key = spectrumkey_factory()
     cl = np.arange(5, dtype=float)
@@ -56,6 +61,7 @@ def test_spectra_add_get_roundtrip(spectrumkey_factory):
 
 
 def test_spectra_iter_pairs_filter(spectrumkey_factory):
+    """`Spectra.iter_pairs` filters stored entries by requested component."""
     s = Spectra()
     k_ee = spectrumkey_factory(100.0, 143.0, "EE")
     k_bb = spectrumkey_factory(100.0, 143.0, "BB")
@@ -67,6 +73,7 @@ def test_spectra_iter_pairs_filter(spectrumkey_factory):
 
 
 def test_spectra_npz_roundtrip(tmp_path: Path, spectrumkey_factory):
+    """`Spectra.save_npz` / `load_npz` preserve cl and var arrays on disk."""
     s = Spectra()
     k = spectrumkey_factory()
     cl = np.arange(5, dtype=float)
@@ -80,6 +87,7 @@ def test_spectra_npz_roundtrip(tmp_path: Path, spectrumkey_factory):
 
 
 def test_fieldset_add_get_tracers(tracer_factory):
+    """`FieldSet.add` / `get` / `tracers` work and reject duplicate tracers."""
     fs = FieldSet("planck")
     t0 = tracer_factory(spin=0)
     t2 = tracer_factory(spin=2)
@@ -92,6 +100,7 @@ def test_fieldset_add_get_tracers(tracer_factory):
 
 
 def test_fitresult_npz_roundtrip(tmp_path: Path):
+    """`FitResult.save_npz` / `load_npz` preserve name, values, and diagnostics."""
     r = FitResult(
         name="demo",
         ell=np.arange(4, dtype=float),

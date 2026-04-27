@@ -132,7 +132,7 @@ def synthetic_mask(nside_small: int = 16) -> np.ndarray:
 def synthetic_camb_dat(tmp_path: Path) -> Path:
     path = tmp_path / "camb_lens_nobb.dat"
     lines = []
-    for ell in range(2, 4096):
+    for ell in range(1, 4096):
         tt = 1000.0 / ell
         ee = 10.0 / ell
         bb = 0.0

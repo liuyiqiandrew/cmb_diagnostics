@@ -56,6 +56,18 @@ def _maybe_write_diagnostics(
 
 
 def cmd_tf_ee(args: argparse.Namespace) -> int:
+    """Run the ``tf-ee`` subcommand: compute EE TF for every SO band.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed CLI arguments with ``args.config`` set.
+
+    Returns
+    -------
+    int
+        Process exit code (``0`` on success).
+    """
     cfg = Config.from_yaml(args.config)
     out_dir = _ensure_output_dir(cfg)
     pipe = Pipeline(cfg)
@@ -74,6 +86,18 @@ def cmd_tf_ee(args: argparse.Namespace) -> int:
 
 
 def cmd_tf_te(args: argparse.Namespace) -> int:
+    """Run the ``tf-te`` subcommand: compute TE TF for every SO band.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed CLI arguments with ``args.config`` set.
+
+    Returns
+    -------
+    int
+        Process exit code (``0`` on success).
+    """
     cfg = Config.from_yaml(args.config)
     out_dir = _ensure_output_dir(cfg)
     pipe = Pipeline(cfg)
@@ -92,6 +116,18 @@ def cmd_tf_te(args: argparse.Namespace) -> int:
 
 
 def cmd_pol_angle(args: argparse.Namespace) -> int:
+    """Run the ``pol-angle`` subcommand: EB pol-angle estimate.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed CLI arguments with ``args.config`` set.
+
+    Returns
+    -------
+    int
+        Process exit code (``0`` on success).
+    """
     cfg = Config.from_yaml(args.config)
     out_dir = _ensure_output_dir(cfg)
     pipe = Pipeline(cfg)
@@ -105,6 +141,18 @@ def cmd_pol_angle(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    """Run the ``run`` subcommand: full pipeline via :meth:`Pipeline.run`.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed CLI arguments with ``args.config`` set.
+
+    Returns
+    -------
+    int
+        Process exit code (``0`` on success).
+    """
     cfg = Config.from_yaml(args.config)
     _ensure_output_dir(cfg)
     pipe = Pipeline(cfg)
@@ -113,6 +161,14 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the top-level ``cmb-diag`` argparse parser.
+
+    Returns
+    -------
+    argparse.ArgumentParser
+        Parser with four subcommands: ``tf-ee``, ``tf-te``, ``pol-angle``,
+        ``run``.
+    """
     p = argparse.ArgumentParser(
         prog="cmb-diag",
         description="SO calibration diagnostics (transfer function, polarization angle).",
@@ -139,6 +195,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Entry point for the ``cmb-diag`` console script.
+
+    Parameters
+    ----------
+    argv : list of str or None, optional
+        Argument vector; when ``None``, ``sys.argv[1:]`` is used.
+
+    Returns
+    -------
+    int
+        Process exit code returned by the selected subcommand.
+    """
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)

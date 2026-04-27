@@ -15,7 +15,17 @@ if TYPE_CHECKING:
 
 
 def save_npz(result: FitResult, path: str | Path) -> None:
-    """Save a pol-angle :class:`FitResult` via :meth:`FitResult.save_npz`."""
+    """Save a pol-angle :class:`FitResult` to an npz.
+
+    Thin wrapper over :meth:`FitResult.save_npz`.
+
+    Parameters
+    ----------
+    result : FitResult
+        Pol-angle result.
+    path : str or Path
+        Destination.
+    """
     result.save_npz(path)
 
 
@@ -25,10 +35,23 @@ def plot(
     ax: Axes | None = None,
     **kwargs: Any,
 ) -> tuple[Figure, Axes]:
-    """Plot pol-angle sweep vs lmax cap.
+    """Plot a pol-angle sweep vs lmax cap with one series per pair.
 
-    ``result.values`` has shape ``(n_pairs, n_caps)``; one errorbar series per
-    pair. X-axis is ``result.ell`` (lmax caps). Y-axis in degrees.
+    Parameters
+    ----------
+    result : FitResult
+        Pol-angle result with ``values`` of shape ``(n_pairs, n_caps)``.
+    path : str or Path or None, optional
+        When given, save the figure there.
+    ax : matplotlib.axes.Axes or None, optional
+        Axis to draw on; when ``None``, a new figure is created.
+    **kwargs
+        ``dpi`` is consumed for new-figure creation; other kwargs ignored.
+
+    Returns
+    -------
+    tuple of (matplotlib.figure.Figure, matplotlib.axes.Axes)
+        The figure / axis pair. Y-axis is in degrees.
     """
     import matplotlib.pyplot as plt
 

@@ -75,6 +75,7 @@ def _fit_tf_bin(
     tf_m = TFAmplitudeModel()
 
     def model(params: np.ndarray, x: np.ndarray) -> np.ndarray:
+        """TF amplitude model wrapping :meth:`TFAmplitudeModel.predict`."""
         return tf_m.predict(float(params[0]), x)
 
     fitter = Fitter(model=model, x=ref_plk, y=pxs, dy=np.sqrt(var))
@@ -87,6 +88,20 @@ def _fit_tf_bin(
 
 
 class TransferFunctionEE:
+    """Estimate the EE transfer function ``r^2`` for one SO band.
+
+    Parameters
+    ----------
+    spec_pp : Spectra
+        Planck x Planck spectra (used to fit the dust amplitude).
+    spec_ps : Spectra
+        Planck x SO spectra (used to fit the TF amplitude ``r``).
+    cmb_ref : CMBReference
+        Binned CMB reference used as the baseline in the TF fit.
+    dust : DustModel
+        Dust model providing ``predict_cross`` and ``fit_amplitude``.
+    """
+
     def __init__(
         self,
         spec_pp: Spectra,
@@ -100,6 +115,24 @@ class TransferFunctionEE:
         self.dust = dust
 
     def estimate(self, target: Tracer) -> FitResult:
+        """Fit the EE transfer function for ``target`` per bin.
+
+        Parameters
+        ----------
+        target : Tracer
+            SO spin-2 tracer whose TF to estimate.
+
+        Returns
+        -------
+        FitResult
+            ``values`` stores ``r^2``; ``errors`` stores ``2|r| * sigma_r``.
+            Diagnostics expose per-bin ``r``, ``dust_amp``, and ``chi2_tf``.
+
+        Raises
+        ------
+        RuntimeError
+            When ``spec_pp.bandpowers`` is missing.
+        """
         bp = self.spec_pp.bandpowers
         if bp is None:
             raise RuntimeError("TransferFunctionEE requires spec_pp.bandpowers")
@@ -140,6 +173,27 @@ class TransferFunctionEE:
 
 
 class TransferFunctionTE:
+    """Estimate the TE transfer function ``r^2`` for one SO band.
+
+    Parameters
+    ----------
+    spec_pp_tt : Spectra
+        Planck x Planck TT spectra. Retained for forward compatibility; TE
+        Knox variances are already populated on ``spec_pp_te`` at compute
+        time.
+    spec_pp_te : Spectra
+        Planck x Planck TE spectra (used for the dust-amplitude fit).
+    spec_ps_te : Spectra
+        Planck x SO TE spectra (used for the TF amplitude fit).
+    cmb_ref : CMBReference
+        Binned CMB reference.
+    dust : DustModel
+        Dust model.
+    lmin : int or None, optional
+        Additional lower ell cut; only bins with ``effective_ell > lmin`` are
+        fitted. Default ``50``; pass ``None`` to disable.
+    """
+
     def __init__(
         self,
         spec_pp_tt: Spectra,
@@ -149,9 +203,6 @@ class TransferFunctionTE:
         dust: DustModel,
         lmin: int | None = 50,
     ) -> None:
-        # spec_pp_tt retained in the signature for forward compatibility but
-        # is not consumed: Knox variances on TE are already populated on
-        # spec_pp_te at compute-time.
         self.spec_pp_tt = spec_pp_tt
         self.spec_pp_te = spec_pp_te
         self.spec_ps_te = spec_ps_te
@@ -160,6 +211,23 @@ class TransferFunctionTE:
         self.lmin = lmin
 
     def estimate(self, target: Tracer) -> FitResult:
+        """Fit the TE transfer function for ``target`` per bin.
+
+        Parameters
+        ----------
+        target : Tracer
+            SO spin-2 tracer whose TF to estimate.
+
+        Returns
+        -------
+        FitResult
+            ``values`` stores ``r^2``; ``errors`` stores ``2|r| * sigma_r``.
+
+        Raises
+        ------
+        RuntimeError
+            When ``spec_pp_te.bandpowers`` is missing.
+        """
         bp = self.spec_pp_te.bandpowers
         if bp is None:
             raise RuntimeError("TransferFunctionTE requires spec_pp_te.bandpowers")

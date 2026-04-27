@@ -73,7 +73,7 @@ Full reference: `docs/architecture.md`, `docs/data_model.md`, `docs/api.md`, `do
 
 - **Units**: raw Planck/SO maps are multiplied by `1e6` (K → μK) at load time. All spectra are in μK²; don't re-scale.
 - **Coordinate & pixelization**: Planck maps must be equatorial HEALPix; SO maps are CAR and get reprojected via `io.loaders.read_carr2healpix`. Maps are `ud_grade`'d to `cfg.nside` (default 512).
-- **CAMB file format**: `io.camb.load_camb_reference` reads BBPower-style `camb_lens_nobb.dat`, prepends a zero row (to shift from `ell=2` to `ell=0`), takes columns 2 (EE), 3 (BB), 4 (TE) as Dℓ, then divides by `ell(ell+1)/(2π)` to get Cℓ.
+- **CAMB file format**: `io.camb.load_camb_reference` reads BBPower-style `camb_lens_nobb.dat`, prepends a zero row (to shift from `ell=1` to `ell=0`), takes columns 2 (EE), 3 (BB), 4 (TE) as Dℓ, then divides by `ell(ell+1)/(2π)` to get Cℓ.
 - **Binning is `is_Dell=True`** in `nmt.NmtBin`; `Bandpowers.e_dl2cl = 2π / ell / (ell+1)` is applied so downstream values are Cℓ.
 - **Beam array length**: `fields.builder._gauss_beam` calls `hp.gauss_beam(fwhm, 3*nside - 1)` (length `3*nside`). pymaster 2.x is strict about this (`ainfo.lmax + 1`); don't pass `3*nside` by accident.
 - **Effective fsky**: `effective_fsky(w) = sum(w²)/Npix` (Knox convention), not `sum(w)/Npix`. Knox variances on TF / pol-angle errors depend on this.

@@ -31,7 +31,24 @@ def build_spin0_field(
     beam_fwhm_arcmin: float,
     nside: int,
 ) -> Any:
-    """Spin-0 NaMaster field from a single-component temperature map."""
+    """Build a spin-0 NaMaster field from a single-component temperature map.
+
+    Parameters
+    ----------
+    tmap : numpy.ndarray
+        HEALPix temperature map in muK.
+    mask : Mask
+        Apodized analysis mask.
+    beam_fwhm_arcmin : float
+        Gaussian beam FWHM in arcminutes.
+    nside : int
+        HEALPix resolution; drives beam length via ``3*nside``.
+
+    Returns
+    -------
+    pymaster.NmtField
+        Spin-0 field ready for ``compute_full_master``.
+    """
     import pymaster as nmt
 
     beam = _gauss_beam(beam_fwhm_arcmin, nside)
@@ -47,7 +64,28 @@ def build_spin2_field(
     purify_e: bool = False,
     purify_b: bool = False,
 ) -> Any:
-    """Spin-2 NaMaster field from Q/U maps."""
+    """Build a spin-2 NaMaster field from Q/U maps.
+
+    Parameters
+    ----------
+    qmap, umap : numpy.ndarray
+        HEALPix Q and U polarization maps in muK.
+    mask : Mask
+        Apodized analysis mask.
+    beam_fwhm_arcmin : float
+        Gaussian beam FWHM in arcminutes.
+    nside : int
+        HEALPix resolution; drives beam length via ``3*nside``.
+    purify_e : bool, optional
+        Forward to ``NmtField(purify_e=...)``.
+    purify_b : bool, optional
+        Forward to ``NmtField(purify_b=...)``.
+
+    Returns
+    -------
+    pymaster.NmtField
+        Spin-2 field ready for ``compute_full_master``.
+    """
     import pymaster as nmt
 
     beam = _gauss_beam(beam_fwhm_arcmin, nside)
@@ -62,7 +100,27 @@ def build_spin2_field(
 
 
 def build_fieldset(cfg: InstrumentConfig, mask: Mask, nside: int) -> FieldSet:
-    """Load I/Q/U per band, construct spin-0 and spin-2 NaMaster fields."""
+    """Load I/Q/U per band and wrap each in spin-0/spin-2 NaMaster fields.
+
+    Parameters
+    ----------
+    cfg : InstrumentConfig
+        Instrument to iterate over; one pair of fields per band.
+    mask : Mask
+        Analysis mask shared across bands.
+    nside : int
+        Target HEALPix resolution.
+
+    Returns
+    -------
+    FieldSet
+        A container with one spin-0 and one spin-2 field per band.
+
+    Raises
+    ------
+    RuntimeError
+        When a loader returns a map with fewer than 3 components.
+    """
     loader = get_loader(cfg, nside)
     fs = FieldSet(cfg.name)
     for band in cfg.bands:

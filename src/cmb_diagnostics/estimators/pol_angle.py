@@ -18,6 +18,22 @@ if TYPE_CHECKING:
 
 
 class PolarizationAngleEB:
+    """Estimate the SO polarization angle from ``EB = a * (EE - BB)`` fits.
+
+    For every SO tracer pair and every upper ell cap in ``lmax_sweep``, fit
+    the rotation amplitude and convert to an angle via
+    :func:`rotation_from_amplitude`.
+
+    Parameters
+    ----------
+    spec_ss : Spectra
+        SO x SO spectra; must carry populated EE, BB, and EB Knox variances.
+    lmin : int, optional
+        Lower ell cut applied to every cap. Default ``30``.
+    lmax_sweep : sequence of int, optional
+        Upper ell caps to sweep over.
+    """
+
     def __init__(
         self,
         spec_ss: Spectra,
@@ -29,6 +45,23 @@ class PolarizationAngleEB:
         self.lmax_sweep = tuple(lmax_sweep)
 
     def estimate(self) -> FitResult:
+        """Run the full pair x cap sweep and return the combined result.
+
+        Returns
+        -------
+        FitResult
+            ``values`` has shape ``(n_pairs, n_caps)`` with angles in radians.
+            ``errors`` stores the 1-sigma Fisher error on each angle.
+            Diagnostics expose the ``so_pairs`` labels, the ``lmax_sweep``,
+            and raw per-cell ``var`` before the Jacobian conversion.
+
+        Raises
+        ------
+        RuntimeError
+            When ``spec_ss.bandpowers`` is missing.
+        ValueError
+            When a selected pair has no EB variance populated.
+        """
         bp = self.spec_ss.bandpowers
         if bp is None:
             raise RuntimeError("PolarizationAngleEB requires spec_ss.bandpowers")
@@ -50,6 +83,7 @@ class PolarizationAngleEB:
         rot = RotationModel()
 
         def model(params: np.ndarray, x: np.ndarray) -> np.ndarray:
+            """Rotation amplitude model wrapping :meth:`RotationModel.predict`."""
             return rot.predict(float(params[0]), x)
 
         for j, lmax in enumerate(self.lmax_sweep):
